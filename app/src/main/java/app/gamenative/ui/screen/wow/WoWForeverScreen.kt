@@ -1048,7 +1048,7 @@ internal fun prepareLaunch(
                 // Battle.net's main thread died (FEX: 64-bit stack overflow in wow64.dll; Box64: deadlock) right after
                 // Qt loaded Wine's directmanipulation.dll, with both emulators and both FEX builds. Disabling the DLL
                 // makes Qt's DirectManipulation setup fail cleanly so it skips it.
-                setEnvVars("$envVars WINEDLLOVERRIDES=directmanipulation=d")
+                setEnvVars("$envVars WINEDLLOVERRIDES=directmanipulation=d" + battleNetWineDebug(context))
             }
             executablePath = exe
             execArgs = ""
@@ -1077,6 +1077,14 @@ internal fun prepareLaunch(
     }
     return CONTAINER_ID
 }
+
+/**
+ * Battle.net's main thread overflowed its 64-bit stack in wow64's call_user_exception_dispatcher: a 32-bit exception
+ * keeps being raised while the previous one is handled. With Debug logging on, also trace exceptions (+seh) so the
+ * report shows which exception and where.
+ */
+private fun battleNetWineDebug(context: Context): String =
+    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,+loaddll,+seh" else ""
 
 private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile, screenSize: String): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
