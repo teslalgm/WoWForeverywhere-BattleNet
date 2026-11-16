@@ -1,6 +1,7 @@
 package app.gamenative.ui.screen.wow
 
 import java.io.File
+import org.json.JSONObject
 
 /** What a launch starts in the WoW container. */
 enum class LaunchTarget {
@@ -29,6 +30,23 @@ object BattleNet {
     const val LAUNCHER_WINDOWS_PATH = "C:\\Program Files (x86)\\Battle.net\\Battle.net Launcher.exe"
 
     private const val LAUNCHER_PREFIX_PATH = ".wine/drive_c/Program Files (x86)/Battle.net/Battle.net Launcher.exe"
+
+    /** Battle.net's own settings file in the Wine user's roaming profile. */
+    private const val CONFIG_PREFIX_PATH = ".wine/drive_c/users/xuser/AppData/Roaming/Battle.net/Battle.net.config"
+
+    /**
+     * Turns off Battle.net's hardware acceleration. Its embedded Chromium window stays plain grey under Wine with GPU
+     * compositing on (first test, Xiaomi 25102PCBEG), so the login page never shows. Keeps every other setting.
+     */
+    fun disableHardwareAcceleration(containerRoot: File) {
+        val config = File(containerRoot, CONFIG_PREFIX_PATH)
+        val json = runCatching { JSONObject(config.readText()) }.getOrNull() ?: JSONObject()
+        val client = json.optJSONObject("Client") ?: JSONObject().also { json.put("Client", it) }
+        if (client.optString("HardwareAcceleration") == "false") return
+        client.put("HardwareAcceleration", "false")
+        config.parentFile?.mkdirs()
+        config.writeText(json.toString(2))
+    }
 
     fun installerFile(downloadDir: File = File(DOWNLOAD_DIR)): File = File(downloadDir, INSTALLER_NAME)
 

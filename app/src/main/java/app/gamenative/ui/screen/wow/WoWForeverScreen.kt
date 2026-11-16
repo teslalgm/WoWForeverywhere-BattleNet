@@ -1033,6 +1033,10 @@ internal fun prepareLaunch(
                 "Battle.net isn't installed yet. Download Blizzard's Windows installer and save it as Download/${BattleNet.INSTALLER_NAME}, then try again."
             }
             onStatus(if (exe == BattleNet.INSTALLER_WINDOWS_PATH) "Starting the Battle.net installer..." else "Starting Battle.net...")
+            if (exe == BattleNet.LAUNCHER_WINDOWS_PATH) {
+                runCatching { BattleNet.disableHardwareAcceleration(rootDir) }
+                    .onFailure { Timber.w(it, "Couldn't turn off Battle.net hardware acceleration") }
+            }
             executablePath = exe
             execArgs = ""
             saveData()
