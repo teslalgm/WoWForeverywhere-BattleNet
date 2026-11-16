@@ -60,6 +60,9 @@ object DebugReport {
                 runCatching { put("wine_debug.log", wineLog(log)) }.onFailure { Timber.w(it, "Report skipped wine_debug.log") }
             }
             newest(File(external, "crash_logs"), 5).forEach { putFile("crash_logs/${it.name}", it) }
+            // Battle.net's and its Agent's own logs from the WoW container, newest first: they say what Battle.net
+            // was doing when it failed, which Wine's log can't.
+            battleNetLogs(context).forEach { (name, file) -> putFile("battle.net/$name", file) }
             gameFolder?.let { game ->
                 newest(File(game, "Logs"), 8).forEach { putFile("game/Logs/${it.name}", it) }
                 newest(File(game, "Errors"), 5).forEach { putFile("game/Errors/${it.name}", it) }
@@ -147,6 +150,28 @@ object DebugReport {
             if (cut > 0) append("[... $cut lines left out ...]\n")
             tail.forEach { append(it).append('\n') }
         }
+    }
+
+    /** Folders in the WoW container where Battle.net, its Agent and its crash reporter write logs. */
+    private val BATTLE_NET_LOG_ROOTS = listOf(
+        ".wine/drive_c/users/xuser/AppData/Local/Battle.net",
+        ".wine/drive_c/users/xuser/AppData/Roaming/Battle.net",
+        ".wine/drive_c/users/xuser/AppData/Local/Blizzard Entertainment",
+        ".wine/drive_c/ProgramData/Battle.net",
+        ".wine/drive_c/ProgramData/Blizzard Entertainment",
+    )
+    private val BATTLE_NET_LOG_TYPES = setOf("log", "txt", "json")
+
+    /** The newest Battle.net log files, as zip-relative names, or nothing when the container doesn't exist. */
+    private fun battleNetLogs(context: Context): List<Pair<String, File>> {
+        val root = runCatching { com.winlator.container.ContainerManager(context).getContainerById("wow_forever")?.rootDir }
+            .getOrNull() ?: return emptyList()
+        return BATTLE_NET_LOG_ROOTS.map { File(root, it) }.filter { it.isDirectory }.flatMap { dir ->
+            dir.walkTopDown().maxDepth(4)
+                .filter { it.isFile && it.extension.lowercase() in BATTLE_NET_LOG_TYPES && it.length() > 0 }
+                .map { "${dir.name}/${it.relativeTo(dir).path}" to it }
+                .toList()
+        }.sortedByDescending { it.second.lastModified() }.take(20)
     }
 
     /** The last [MAX_FILE_BYTES] of a file: the end of a log is where a problem shows. */
