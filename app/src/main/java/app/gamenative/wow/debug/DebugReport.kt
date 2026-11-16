@@ -67,7 +67,7 @@ object DebugReport {
             battleNetProductDb(context)?.let { db ->
                 runCatching { put("battle.net/product.db.txt", printable(db.readBytes())) }
                 // Battle.net's own install metadata, next to its exe.
-                File(db.parentFile?.parentFile?.parentFile, "Program Files (x86)/Battle.net/.build.info")
+                File(db.parentFile?.parentFile?.parentFile?.parentFile, "Program Files (x86)/Battle.net/.build.info")
                     .takeIf { it.isFile }?.let { putFile("battle.net/Battle.net-install.build.info", it) }
             }
             gameFolder?.let { game ->
