@@ -1041,6 +1041,9 @@ internal fun prepareLaunch(
             // but Battle.net itself deadlocked inside wowbox64 0.4.2 with its main thread holding a Box64 lock, so it
             // goes back to FEX (second test, Xiaomi 25102PCBEG).
             emulator = if (exe == BattleNet.INSTALLER_WINDOWS_PATH) "Box64" else "FEXCore"
+            // Upstream FEX 2605's libwow64fex overflowed the 64-bit stack inside wow64.dll on Battle.net.exe's main
+            // thread too (third test). WoW Box's FEX carries Battle.net-specific fixes, so Battle.net uses that build.
+            setFEXCoreVersion(BattleNet.FEX_VERSION)
             executablePath = exe
             execArgs = ""
             saveData()

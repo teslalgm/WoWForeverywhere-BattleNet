@@ -23,6 +23,12 @@ enum class LaunchTarget {
 object BattleNet {
     const val INSTALLER_NAME = "Battle.net-Setup.exe"
 
+    /**
+     * FEX build used for Battle.net: assets/fexcore/fexcore-2508-wowbox.tzst, WoW Box's FEX (MIT) built from
+     * https://github.com/FrontMage/FEX at 7519b9605209e9e19eaf7be669dae7c1848fe5f1, archive sha256 2beba31f8d0f32c1…
+     */
+    const val FEX_VERSION = "2508-wowbox"
+
     /** Android's shared Download folder, mounted as D: (see the container's drives). */
     private const val DOWNLOAD_DIR = "/storage/emulated/0/Download"
 

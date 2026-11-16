@@ -41,6 +41,9 @@ jobs:
       - name: Configure the SDK
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+      - name: Check bundled FEX builds
+        run: for f in app/src/main/assets/fexcore/*.tzst; do echo "== $f"; tar --zstd -tvf "$f"; done
+
       - name: Unit tests
         run: ./gradlew --no-daemon testModernDebugUnitTest
 
