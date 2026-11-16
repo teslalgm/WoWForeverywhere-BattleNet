@@ -193,7 +193,7 @@ object BattleNet {
     /**
      * Points Battle.net's login at [portal]'s region (US, EU, KR; Taiwan logs in through KR). Battle.net otherwise
      * picks it from the container's Windows region, which is the US, and then registers WoW for the US: Blizzard's
-     * Agent refused the phone's EU install with error 2800 (BLZBNTAGT00000AF0) until the region matched. The login
+     * Agent refused the phone's EU install with error 2800 (BLZBNTAGT00000AF0) while it was US. The login
      * screen no longer has a region picker. Returns true when the region changed (Battle.net may ask to log in again).
      */
     fun setLoginRegion(containerRoot: File, portal: String): Boolean {
@@ -203,14 +203,26 @@ object BattleNet {
             else -> return false
         }
         val config = File(containerRoot, CONFIG_PREFIX_PATH)
-        val json = runCatching { JSONObject(config.readText()) }.getOrNull() ?: JSONObject()
-        val services = json.optJSONObject("Services") ?: JSONObject().also { json.put("Services", it) }
-        if (services.optString("LastLoginRegion") == region) return false
-        services.put("LastLoginRegion", region)
-        services.put("LastLoginAddress", "${region.lowercase()}.actual.battle.net")
-        config.parentFile?.mkdirs()
-        config.writeText(json.toString(2))
-        return true
+        val json = runCatching { JSONObject(config.readText()) }.getOrNull() ?: return false
+        var changed = false
+        // bnet-test-25 wrote these at the top level, where Battle.net doesn't read them; take them out again.
+        json.optJSONObject("Services")?.let { top ->
+            if (top.optString("LastLoginRegion") == region) { top.remove("LastLoginRegion"); changed = true }
+            if (top.optString("LastLoginAddress") == "${region.lowercase()}.actual.battle.net") { top.remove("LastLoginAddress"); changed = true }
+            if (top.length() == 0) json.remove("Services")
+        }
+        // Battle.net keeps its login settings per installation, under a hash key ("5a61123b37cafce1": {"Services":
+        // {"LastLoginRegion": "US", "LastLoginAddress": "us.actual.battle.net", "LastLoginTassadar": ...}}). Only
+        // the region and its address change; LastLoginTassadar (account.battle.net) is the same for every region.
+        json.keys().asSequence().toList().forEach { key ->
+            val services = json.optJSONObject(key)?.optJSONObject("Services") ?: return@forEach
+            if (!services.has("LastLoginRegion") || services.optString("LastLoginRegion") == region) return@forEach
+            services.put("LastLoginRegion", region)
+            services.put("LastLoginAddress", "${region.lowercase()}.actual.battle.net")
+            changed = true
+        }
+        if (changed) config.writeText(json.toString(2))
+        return changed
     }
 
     fun installerFile(downloadDir: File = File(DOWNLOAD_DIR)): File = File(downloadDir, INSTALLER_NAME)
