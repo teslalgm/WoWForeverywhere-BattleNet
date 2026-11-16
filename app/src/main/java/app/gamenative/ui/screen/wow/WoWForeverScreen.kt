@@ -983,6 +983,7 @@ internal fun prepareLaunch(
     product: WowProduct,
     gpu: GpuProfile,
     screenSize: String,
+    target: LaunchTarget = LaunchTarget.GAME,
     onStatus: (String) -> Unit,
 ): String {
     installBundledComponents(context, onStatus)
@@ -996,9 +997,14 @@ internal fun prepareLaunch(
     }
 
     val arm64Exe = File(gameRoot, "${product.flavorDir}/${product.armExe}")
-    BattleNetSignIn.load(context)?.let { login ->
-        BattleNetSignIn.writeLoginFile(gameRoot, product, login)
-        BattleNetSignIn.startLoginWatcher(gameRoot, product)
+    // Battle.net signs in itself and hands the game a launcher token, so it gets no login.txt.
+    if (target == LaunchTarget.GAME) {
+        BattleNetSignIn.load(context)?.let { login ->
+            BattleNetSignIn.writeLoginFile(gameRoot, product, login)
+            BattleNetSignIn.startLoginWatcher(gameRoot, product)
+        }
+    } else {
+        BattleNetSignIn.removeLoginFile(gameRoot)
     }
     if (!arm64Exe.exists()) {
         try {
@@ -1021,6 +1027,17 @@ internal fun prepareLaunch(
         container.saveData()
     }
     check(containerManager.hasContainer(CONTAINER_ID)) { "Container creation failed. Check system storage and logs." }
+    if (target == LaunchTarget.BATTLE_NET) {
+        containerManager.getContainerById(CONTAINER_ID)?.apply {
+            val exe = checkNotNull(BattleNet.executable(rootDir)) {
+                "Battle.net isn't installed yet. Download Blizzard's Windows installer and save it as Download/${BattleNet.INSTALLER_NAME}, then try again."
+            }
+            onStatus(if (exe == BattleNet.INSTALLER_WINDOWS_PATH) "Starting the Battle.net installer..." else "Starting Battle.net...")
+            executablePath = exe
+            execArgs = ""
+            saveData()
+        }
+    }
     // Frame generation follows Settings; the in-game menu's own LSFG choices stay in the container.
     containerManager.getContainerById(CONTAINER_ID)?.apply {
         // A Lossless.dll without the shaders would make the frame-generation layer close the game, so it's left out.
@@ -1060,7 +1077,9 @@ private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")
         put("wineVersion", "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
-        put("fexcoreVersion", "2609-0")
+        // x64 programs (the Battle.net app) run through FEX in this ARM64EC prefix; the game itself stays native ARM64.
+        // The FEX build is bundled as assets/fexcore/fexcore-<version>.tzst, taken from upstream GameNative.
+        put("fexcoreVersion", com.winlator.core.DefaultVersion.FEXCORE)
         put("drives", "D:/storage/emulated/0/DownloadE:/data/data/${BuildConfig.APPLICATION_ID}/storageG:${gameRoot.path}")
         put("executablePath", "G:\\${product.flavorDir}\\${product.armExe}")
         put("execArgs", "-d3d11")

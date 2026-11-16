@@ -142,6 +142,9 @@ android {
 
     buildTypes {
         debug {
+            // Test builds of the Battle.net branch install next to the regular app instead of replacing it.
+            applicationIdSuffix = ".bnettest"
+            versionNameSuffix = "-bnettest"
             isDebuggable = true
             isMinifyEnabled = false
             isShrinkResources = false
