@@ -47,6 +47,15 @@ android {
     ndkVersion = "27.3.13750724"
 
     signingConfigs {
+        // Fixed key for the Battle.net test builds. Without it every CI run signs with a fresh random debug key, and
+        // Android refuses to install the next build over the previous one ("conflicts with an existing package").
+        // Only used for the .bnettest debug package, never for release builds.
+        getByName("debug") {
+            storeFile = file("bnettest-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("release") {
             if (keystoreProperties != null) {
                 storeFile = file(keystoreProperties["storeFile"].toString())
