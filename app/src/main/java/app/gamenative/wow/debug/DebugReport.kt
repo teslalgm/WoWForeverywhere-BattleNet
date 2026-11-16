@@ -63,6 +63,10 @@ object DebugReport {
             // Battle.net's and its Agent's own logs from the WoW container, newest first: they say what Battle.net
             // was doing when it failed, which Wine's log can't.
             battleNetLogs(context).forEach { (name, file) -> putFile("battle.net/$name", file) }
+            // What the FUSE chmod shim did (app/src/main/cpp/gamenative_fuse_chmod.c): loaded in wineserver, and
+            // which permission changes Android refused and the shim let through.
+            runCatching { com.winlator.container.ContainerManager(context).getContainerById("wow_forever")?.rootDir }
+                .getOrNull()?.let { putFile("wine/fuse_chmod.log", File(it, ".wine/fuse_chmod.log")) }
             // The Agent's install database (protobuf): which region each install, Battle.net's own included, is on.
             battleNetProductDb(context)?.let { db ->
                 runCatching { put("battle.net/product.db.txt", printable(db.readBytes())) }
