@@ -73,6 +73,13 @@ object BattleNet {
         "DejaVu Serif (TrueType)" to "DejaVuSerif.ttf",
         "DejaVu Serif Bold (TrueType)" to "DejaVuSerif-Bold.ttf",
         "Source Han Sans CN Regular (OpenType)" to "SourceHanSansCN-Regular.otf",
+        "Source Han Sans KR Regular (OpenType)" to "SourceHanSansKR-Regular.otf",
+        "Noto Sans Thai (TrueType)" to "NotoSansThai-Regular.ttf",
+        "Noto Sans Arabic (TrueType)" to "NotoSansArabic-Regular.ttf",
+        "Noto Sans Hebrew (TrueType)" to "NotoSansHebrew-Regular.ttf",
+        "Noto Sans Devanagari (TrueType)" to "NotoSansDevanagari-Regular.ttf",
+        "Noto Sans Symbols (TrueType)" to "NotoSansSymbols-Regular.ttf",
+        "Noto Sans Symbols 2 (TrueType)" to "NotoSansSymbols2-Regular.ttf",
     )
 
     /**
@@ -90,12 +97,20 @@ object BattleNet {
     private val FONT_REPLACEMENTS = listOf(
         // DirectWrite: Wine's fallback table names these families for whole scripts.
         "Tahoma" to "DejaVu Sans", "Tahoma Bold" to "DejaVu Sans", "sans" to "DejaVu Sans", "sans-serif" to "DejaVu Sans",
-        "Microsoft Sans Serif" to "DejaVu Sans", "Noto Sans Armenian" to "DejaVu Sans", "Noto Sans Hebrew" to "DejaVu Sans",
-        "Noto Sans Arabic" to "DejaVu Sans", "Noto Sans Georgian" to "DejaVu Sans",
+        // Wine's table names Microsoft Sans Serif for Thai only, but GDI programs ask for it for Latin text, and Noto
+        // Sans Thai has no Latin letters, so it stays on DejaVu (no Thai). Every other script in the table that
+        // Battle.net's languages, news or symbols can use maps to a font that has it (coverage checked per range).
+        "Microsoft Sans Serif" to "DejaVu Sans", "Noto Sans Armenian" to "DejaVu Sans", "Noto Sans Georgian" to "DejaVu Sans",
+        "Noto Sans NKo" to "DejaVu Sans", "Noto Sans Lao" to "DejaVu Sans", "Noto Sans Ogham" to "DejaVu Sans",
+        "Noto Sans Tifinagh" to "DejaVu Sans", "Noto Sans Lisu" to "DejaVu Sans",
+        "Noto Sans Symbols2" to "Noto Sans Symbols 2", "Noto Emoji" to "Noto Sans Symbols 2",
+        "Segoe UI Emoji" to "Noto Sans Symbols 2", "Segoe UI Symbol" to "Noto Sans Symbols",
         "Microsoft YaHei" to "Source Han Sans CN", "Microsoft JhengHei" to "Source Han Sans CN",
-        "Noto Sans CJK TC" to "Source Han Sans CN", "Malgun Gothic" to "Source Han Sans CN", "Meiryo" to "Source Han Sans CN",
-        "Meiryo UI" to "Source Han Sans CN", "MS Gothic" to "Source Han Sans CN", "Yu Gothic" to "Source Han Sans CN",
-        "Yu Gothic UI" to "Source Han Sans CN", "SimSun" to "Source Han Sans CN", "Gulim" to "Source Han Sans CN",
+        "Noto Sans CJK TC" to "Source Han Sans CN", "Meiryo" to "Source Han Sans CN", "Meiryo UI" to "Source Han Sans CN",
+        "MS Gothic" to "Source Han Sans CN", "Yu Gothic" to "Source Han Sans CN", "Yu Gothic UI" to "Source Han Sans CN",
+        "SimSun" to "Source Han Sans CN",
+        "Malgun Gothic" to "Source Han Sans KR", "Gulim" to "Source Han Sans KR",
+        "Leelawadee UI" to "Noto Sans Thai", "Nirmala UI" to "Noto Sans Devanagari",
         // Windows UI fonts Chromium asks for by name.
         "Segoe UI" to "DejaVu Sans", "Segoe UI Semibold" to "DejaVu Sans", "Segoe UI Light" to "DejaVu Sans",
         "Arial" to "DejaVu Sans", "Helvetica" to "DejaVu Sans", "Verdana" to "DejaVu Sans", "Calibri" to "DejaVu Sans",
