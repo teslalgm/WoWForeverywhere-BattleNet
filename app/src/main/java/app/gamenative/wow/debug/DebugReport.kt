@@ -138,7 +138,12 @@ object DebugReport {
      * Unwind backtraces and handler calls that a nested-exception loop repeats thousands of times (+seh). They filled
      * an 8 MB report on their own and pushed out the exceptions that started the loop.
      */
-    private val WINE_LOOP_NOISE = listOf(":seh:virtual_unwind backtrace:", ":seh:call_seh_handlers ")
+    // RtlUnwindEx/RtlRestoreContext: wow64 longjmps back on every user32 callback (window messages), ~16 lines a
+    // time; in bnet-test-31 they were 99% of the kept tail and pushed the moment of a hang out of the report.
+    // Real exceptions still show through their dispatch_exception lines.
+    private val WINE_LOOP_NOISE = listOf(
+        ":seh:virtual_unwind backtrace:", ":seh:call_seh_handlers ", ":seh:RtlUnwindEx ", ":seh:RtlRestoreContext ",
+    )
 
     /**
      * The Wine log for a report: its first lines, then the last [MAX_WINE_LOG_BYTES] once [WINE_LOOP_NOISE] is
