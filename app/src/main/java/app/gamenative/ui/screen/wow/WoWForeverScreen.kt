@@ -1044,6 +1044,12 @@ internal fun prepareLaunch(
             // Upstream FEX 2605's libwow64fex overflowed the 64-bit stack inside wow64.dll on Battle.net.exe's main
             // thread too (third test). WoW Box's FEX carries Battle.net-specific fixes, so Battle.net uses that build.
             setFEXCoreVersion(BattleNet.FEX_VERSION)
+            if (exe == BattleNet.LAUNCHER_WINDOWS_PATH) {
+                // Battle.net's main thread died (FEX: 64-bit stack overflow in wow64.dll; Box64: deadlock) right after
+                // Qt loaded Wine's directmanipulation.dll, with both emulators and both FEX builds. Disabling the DLL
+                // makes Qt's DirectManipulation setup fail cleanly so it skips it.
+                setEnvVars("$envVars WINEDLLOVERRIDES=directmanipulation=d")
+            }
             executablePath = exe
             execArgs = ""
             saveData()
