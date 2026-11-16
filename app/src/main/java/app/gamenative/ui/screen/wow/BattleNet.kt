@@ -208,7 +208,6 @@ object BattleNet {
         if (services.optString("LastLoginRegion") == region) return false
         services.put("LastLoginRegion", region)
         services.put("LastLoginAddress", "${region.lowercase()}.actual.battle.net")
-        services.remove("LastLoginTassadar")
         config.parentFile?.mkdirs()
         config.writeText(json.toString(2))
         return true

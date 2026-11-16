@@ -63,6 +63,8 @@ object DebugReport {
             // Battle.net's and its Agent's own logs from the WoW container, newest first: they say what Battle.net
             // was doing when it failed, which Wine's log can't.
             battleNetLogs(context).forEach { (name, file) -> putFile("battle.net/$name", file) }
+            // The Agent's install database (protobuf): which region each install, Battle.net's own included, is on.
+            battleNetProductDb(context)?.let { db -> runCatching { put("battle.net/product.db.txt", printable(db.readBytes())) } }
             gameFolder?.let { game ->
                 // Install metadata Battle.net's Agent reads when it registers ("Locate the game") the install.
                 val installRoot = if (game.name == "_forever_") game.parentFile else game
@@ -170,8 +172,9 @@ object DebugReport {
         ".wine/drive_c/users/xuser/AppData/Local/Blizzard Entertainment",
         ".wine/drive_c/ProgramData/Battle.net",
         ".wine/drive_c/ProgramData/Blizzard Entertainment",
+        ".wine/drive_c/Program Files (x86)/Battle.net",
     )
-    private val BATTLE_NET_LOG_TYPES = setOf("log", "txt", "json")
+    private val BATTLE_NET_LOG_TYPES = setOf("log", "txt", "json", "config", "info")
 
     /** The newest Battle.net log files, as zip-relative names, or nothing when the container doesn't exist. */
     private fun battleNetLogs(context: Context): List<Pair<String, File>> {
@@ -183,6 +186,20 @@ object DebugReport {
                 .map { "${dir.name}/${it.relativeTo(dir).path}" to it }
                 .toList()
         }.sortedByDescending { it.second.lastModified() }.take(20)
+    }
+
+    private fun battleNetProductDb(context: Context): File? = runCatching {
+        com.winlator.container.ContainerManager(context).getContainerById("wow_forever")?.rootDir
+    }.getOrNull()?.let { File(it, ".wine/drive_c/ProgramData/Battle.net/Agent/product.db") }?.takeIf { it.isFile && it.length() < 512_000 }
+
+    /** A binary file's readable runs of 3+ characters, one per line, like `strings`. */
+    private fun printable(bytes: ByteArray): String = buildString {
+        val run = StringBuilder()
+        for (b in bytes) {
+            val c = b.toInt() and 0xff
+            if (c in 0x20..0x7e) run.append(c.toChar()) else { if (run.length >= 3) append(run).append('\n'); run.setLength(0) }
+        }
+        if (run.length >= 3) append(run)
     }
 
     /** The last [MAX_FILE_BYTES] of a file: the end of a log is where a problem shows. */
