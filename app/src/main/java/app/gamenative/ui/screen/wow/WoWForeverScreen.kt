@@ -1038,6 +1038,8 @@ internal fun prepareLaunch(
                     .onFailure { Timber.w(it, "Couldn't turn off Battle.net hardware acceleration") }
                 runCatching { BattleNet.linkGameFolder(rootDir, gameRoot) }
                     .onFailure { Timber.w(it, "Couldn't link the game folder into C:") }
+                runCatching { Timber.i("Game .product.db: %s", BattleNet.writeProductDb(gameRoot)) }
+                    .onFailure { Timber.w(it, "Couldn't write the game's .product.db") }
                 runCatching { installPortal(gameRoot, product) }.getOrNull()?.let { portal ->
                     runCatching { if (BattleNet.setLoginRegion(rootDir, portal)) Timber.i("Battle.net login region set to %s", portal) }
                         .onFailure { Timber.w(it, "Couldn't set Battle.net's login region") }

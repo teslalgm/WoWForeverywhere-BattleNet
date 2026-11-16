@@ -247,6 +247,68 @@ object BattleNet {
         java.nio.file.Files.createSymbolicLink(link, target)
     }
 
+    /**
+     * Writes the game folder's .product.db (plus Launcher.db and .patch.result) when it has none, so Battle.net's
+     * "Locate the game" can register it. Agent.exe builds the install list for a modern product only from
+     * "<folder>/.product.db" (Agent 9873: 0x4be322 -> 0x482f9d -> 0x475642, "Failed to read db info from ...") and
+     * answers 2800 when that list is empty; the Foreverywhere download has no such file. The layout copies a real
+     * Battle.net-installed WoW Forever folder's .product.db field for field; version, build key, tags and region come
+     * from this folder's .build.info. An existing file is never touched: once registered, the Agent owns it.
+     */
+    fun writeProductDb(gameRoot: File): String {
+        val db = File(gameRoot, ".product.db")
+        if (db.exists()) return "kept"
+        val lines = File(gameRoot, ".build.info").readLines().filter { it.isNotBlank() }
+        val header = lines.first().split('|').map { it.substringBefore('!') }
+        val row = lines.drop(1).map { it.split('|') }.firstOrNull { it.getOrNull(header.indexOf("Active")) == "1" }
+            ?: error("no active build in .build.info")
+        fun col(name: String) = row.getOrNull(header.indexOf(name)).orEmpty()
+        val product = col("Product").ifEmpty { "wowf" }
+        val buildKey = col("Build Key")
+        val pb = Proto().apply {
+            str(1, product)
+            str(2, product)
+            msg(3, Proto().apply {
+                str(1, GAME_LINK_WINDOWS_PATH.replace('\\', '/'))
+                str(2, col("Branch").ifEmpty { "eu" })
+                int(3, 2); int(4, 2); int(5, 3)
+                str(6, "enUS"); str(7, "enUS")
+                msg(8, Proto().apply { str(1, "enUS"); int(2, 3) })
+                msg(9, Proto()); msg(10, Proto())
+                str(13, "_forever_")
+            })
+            msg(4, Proto().apply {
+                msg(1, Proto().apply {
+                    int(1, 1); int(2, 1); int(3, 1); int(4, 0); int(5, 0)
+                    str(7, col("Version"))
+                    msg(10, Proto())
+                    str(12, buildKey); str(14, buildKey)
+                    str(17, col("Tags"))
+                    int(21, System.currentTimeMillis())
+                })
+            })
+            str(6, "wow")
+            int(7, 0)
+            str(8, "{\"user_install_package_settings\":[]}")
+        }
+        db.writeBytes(pb.bytes())
+        File(gameRoot, "Launcher.db").takeUnless { it.exists() }?.writeText("enUS")
+        File(gameRoot, ".patch.result").takeUnless { it.exists() }?.writeText("0")
+        return "written (${col("Version")}, $buildKey)"
+    }
+
+    /** Minimal protobuf writer: varints and length-delimited fields are all .product.db uses. */
+    private class Proto {
+        private val out = java.io.ByteArrayOutputStream()
+        private fun varint(v: Long) { var x = v; while (x and 0x7FL.inv() != 0L) { out.write(((x and 0x7F) or 0x80).toInt()); x = x ushr 7 }; out.write(x.toInt()) }
+        fun int(field: Int, v: Long) { varint((field shl 3).toLong()); varint(v) }
+        fun int(field: Int, v: Int) = int(field, v.toLong())
+        fun bytes(field: Int, b: ByteArray) { varint(((field shl 3) or 2).toLong()); varint(b.size.toLong()); out.write(b) }
+        fun str(field: Int, s: String) = bytes(field, s.toByteArray())
+        fun msg(field: Int, m: Proto) = bytes(field, m.bytes())
+        fun bytes(): ByteArray = out.toByteArray()
+    }
+
     fun installerFile(downloadDir: File = File(DOWNLOAD_DIR)): File = File(downloadDir, INSTALLER_NAME)
 
     fun isInstalled(containerRoot: File?): Boolean = containerRoot != null && File(containerRoot, LAUNCHER_PREFIX_PATH).isFile
