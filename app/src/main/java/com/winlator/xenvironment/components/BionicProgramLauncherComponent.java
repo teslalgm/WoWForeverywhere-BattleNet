@@ -61,6 +61,16 @@ import app.gamenative.PluviaApp;
 import app.gamenative.events.AndroidEvent;
 
 public class BionicProgramLauncherComponent extends GuestProgramLauncherComponent {
+    /**
+     * ":<path>" of libgamenative_fuse_chmod.so, or "" when the APK doesn't have it. Lets wineserver "set" Windows
+     * permissions on Android's shared storage, which refuses chmod (see app/src/main/cpp/gamenative_fuse_chmod.c).
+     * Both launch paths load it, so whichever starts wineserver has it.
+     */
+    private static String fuseChmodPreload(Context context) {
+        String path = context.getApplicationInfo().nativeLibraryDir + "/libgamenative_fuse_chmod.so";
+        return new File(path).exists() ? ":" + path : "";
+    }
+
     private String guestExecutable;
     private static int pid = -1;
     private String[] bindingPaths;
@@ -348,6 +358,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             ld_preload += ":" + dnsV4MappedPath;
         }
         if (replacePath != null) ld_preload += ":" + replacePath;
+        ld_preload += fuseChmodPreload(context);
 
         envVars.put("LD_PRELOAD", ld_preload);
         // WoW container: stable own host name for the DNS shim (gethostname), see MachineIdentity.
@@ -594,6 +605,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         if (new File(sysvPath).exists()) ld_preload += sysvPath;
 
         if (replacePath != null) ld_preload += ":" + replacePath;
+        ld_preload += fuseChmodPreload(context);
 
         envVars.put("LD_PRELOAD", ld_preload);
 
