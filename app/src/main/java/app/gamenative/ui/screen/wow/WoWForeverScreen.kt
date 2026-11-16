@@ -1047,8 +1047,9 @@ internal fun prepareLaunch(
             // Full x86 memory ordering for Battle.net (vector and memcpy/memset stores too). After login it crashed in
             // its libcurl reading data->conn as null right after the async DNS path had used it, and the next run
             // hung loading the password page: the signs of a cross-thread ordering race. Only Battle.net runs
-            // through FEX; the game is native ARM64, so this costs it nothing.
-            setFEXCorePreset(com.winlator.fexcore.FEXCorePreset.STABILITY)
+            // through FEX; the game is native ARM64, so this costs it nothing. COMPATIBILITY has the same ordering as
+            // STABILITY but keeps multiblock JIT: STABILITY made Battle.net so slow it looked frozen at start-up.
+            setFEXCorePreset(com.winlator.fexcore.FEXCorePreset.COMPATIBILITY)
             if (exe == BattleNet.LAUNCHER_WINDOWS_PATH) {
                 // Battle.net's main thread died (FEX: 64-bit stack overflow in wow64.dll; Box64: deadlock) right after
                 // Qt loaded Wine's directmanipulation.dll, with both emulators and both FEX builds. Disabling the DLL
