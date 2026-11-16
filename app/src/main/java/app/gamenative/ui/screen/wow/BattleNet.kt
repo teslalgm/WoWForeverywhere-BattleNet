@@ -1,5 +1,6 @@
 package app.gamenative.ui.screen.wow
 
+import com.winlator.core.WineRegistryEditor
 import java.io.File
 import org.json.JSONObject
 
@@ -59,6 +60,21 @@ object BattleNet {
     private const val REPLACEMENTS_KEY = "[Software\\\\Wine\\\\Fonts\\\\Replacements]"
     private const val FONTS_PREFIX_PATH = ".wine/drive_c/windows/Fonts"
     private const val FONT_ASSETS = "battlenet_fonts"
+    private const val SYSTEM_REG_PREFIX_PATH = ".wine/system.reg"
+    private const val NT_FONTS_KEY = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+    private const val FONTS_KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Fonts"
+
+    /** Registry names for the fonts copied into C:\\windows\\Fonts (Tahoma is Wine's own, LGPL). */
+    private val REGISTERED_FONTS = listOf(
+        "Tahoma (TrueType)" to "tahoma.ttf",
+        "Tahoma Bold (TrueType)" to "tahomabd.ttf",
+        "DejaVu Sans (TrueType)" to "DejaVuSans.ttf",
+        "DejaVu Sans Bold (TrueType)" to "DejaVuSans-Bold.ttf",
+        "DejaVu Sans Mono (TrueType)" to "DejaVuSansMono.ttf",
+        "DejaVu Sans Mono Bold (TrueType)" to "DejaVuSansMono-Bold.ttf",
+        "DejaVu Serif (TrueType)" to "DejaVuSerif.ttf",
+        "DejaVu Serif Bold (TrueType)" to "DejaVuSerif-Bold.ttf",
+    )
 
     /**
      * Windows UI fonts Battle.net's Chromium asks for, and the open font Wine shows in their place. Wine only uses a
@@ -86,6 +102,19 @@ object BattleNet {
             if (!target.isFile) context.assets.open("$FONT_ASSETS/$name").use { input -> target.outputStream().use { input.copyTo(it) } }
         }
         setUserRegSection(containerRoot, REPLACEMENTS_KEY, FONT_REPLACEMENTS.map { it.first to it.second })
+        // DirectWrite, which Chromium's text code uses, only sees fonts listed in the registry, not files in the
+        // Fonts folder. The prefix lists Tahoma under Z:\\opt\\wine, which this app's Wine doesn't use, so DirectWrite
+        // had no fonts at all and the stack overflow moved into its FindFamilyName (eighth test).
+        File(containerRoot, SYSTEM_REG_PREFIX_PATH).takeIf { it.isFile }?.let { reg ->
+            WineRegistryEditor(reg).use { editor ->
+                REGISTERED_FONTS.forEach { (name, file) ->
+                    if (File(fonts, file).isFile) {
+                        editor.setStringValue(NT_FONTS_KEY, name, file)
+                        editor.setStringValue(FONTS_KEY, name, file)
+                    }
+                }
+            }
+        }
         return fonts.list().orEmpty().sorted()
     }
 
