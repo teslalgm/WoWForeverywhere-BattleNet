@@ -1037,6 +1037,10 @@ internal fun prepareLaunch(
                 runCatching { BattleNet.disableHardwareAcceleration(rootDir) }
                     .onFailure { Timber.w(it, "Couldn't turn off Battle.net hardware acceleration") }
             }
+            // 32-bit emulator per program. The installer needs Box64 (FEX's libwow64fex overflowed its stack on it),
+            // but Battle.net itself deadlocked inside wowbox64 0.4.2 with its main thread holding a Box64 lock, so it
+            // goes back to FEX (second test, Xiaomi 25102PCBEG).
+            emulator = if (exe == BattleNet.INSTALLER_WINDOWS_PATH) "Box64" else "FEXCore"
             executablePath = exe
             execArgs = ""
             saveData()
