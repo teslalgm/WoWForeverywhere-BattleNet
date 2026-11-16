@@ -1049,6 +1049,8 @@ internal fun prepareLaunch(
                 // Qt loaded Wine's directmanipulation.dll, with both emulators and both FEX builds. Disabling the DLL
                 // makes Qt's DirectManipulation setup fail cleanly so it skips it.
                 setEnvVars("$envVars WINEDLLOVERRIDES=directmanipulation=d" + battleNetWineDebug(context))
+                runCatching { BattleNet.setRelayTrace(rootDir, app.gamenative.wow.debug.DebugLog.isEnabled(context)) }
+                    .onFailure { Timber.w(it, "Couldn't set Battle.net's relay trace") }
             }
             executablePath = exe
             execArgs = ""
@@ -1085,7 +1087,7 @@ internal fun prepareLaunch(
  * log to show the 32-bit exceptions that start it.
  */
 private fun battleNetWineDebug(context: Context): String =
-    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,+loaddll,+seh" else ""
+    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,+loaddll,+seh,+relay" else ""
 
 private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile, screenSize: String): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""

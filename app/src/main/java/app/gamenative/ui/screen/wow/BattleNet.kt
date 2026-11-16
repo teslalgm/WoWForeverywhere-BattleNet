@@ -54,6 +54,31 @@ object BattleNet {
         config.writeText(json.toString(2))
     }
 
+    private const val USER_REG_PREFIX_PATH = ".wine/user.reg"
+    private const val DEBUG_KEY = "[Software\\\\Wine\\\\Debug]"
+
+    /**
+     * Turns Wine's relay trace on or off for calls libcef.dll makes into the windowing DLLs. Battle.net's main thread
+     * recurses inside libcef until its 32-bit stack runs out (sixth test); the return address of every such call
+     * shows which libcef code is on that loop. Only takes effect with +relay in WINEDEBUG.
+     */
+    fun setRelayTrace(containerRoot: File, enabled: Boolean) {
+        val reg = File(containerRoot, USER_REG_PREFIX_PATH)
+        if (!reg.isFile) return
+        val kept = StringBuilder()
+        var skipping = false
+        reg.readLines().forEach { line ->
+            if (line.startsWith("[")) skipping = line.startsWith(DEBUG_KEY)
+            if (!skipping) kept.append(line).append('\n')
+        }
+        if (enabled) {
+            kept.append('\n').append(DEBUG_KEY).append(' ').append(System.currentTimeMillis() / 1000).append('\n')
+            kept.append("\"RelayFromInclude\"=\"libcef.dll\"\n")
+            kept.append("\"RelayInclude\"=\"user32;gdi32;imm32;uxtheme;dwmapi;shcore;ole32;combase;shell32;comctl32\"\n")
+        }
+        reg.writeText(kept.toString())
+    }
+
     fun installerFile(downloadDir: File = File(DOWNLOAD_DIR)): File = File(downloadDir, INSTALLER_NAME)
 
     fun isInstalled(containerRoot: File?): Boolean = containerRoot != null && File(containerRoot, LAUNCHER_PREFIX_PATH).isFile
