@@ -190,6 +190,30 @@ object BattleNet {
         reg.writeText(kept.toString())
     }
 
+    /**
+     * Points Battle.net's login at [portal]'s region (US, EU, KR; Taiwan logs in through KR). Battle.net otherwise
+     * picks it from the container's Windows region, which is the US, and then registers WoW for the US: Blizzard's
+     * Agent refused the phone's EU install with error 2800 (BLZBNTAGT00000AF0) until the region matched. The login
+     * screen no longer has a region picker. Returns true when the region changed (Battle.net may ask to log in again).
+     */
+    fun setLoginRegion(containerRoot: File, portal: String): Boolean {
+        val region = when (portal.uppercase()) {
+            "US", "EU", "KR", "CN" -> portal.uppercase()
+            "TW" -> "KR"
+            else -> return false
+        }
+        val config = File(containerRoot, CONFIG_PREFIX_PATH)
+        val json = runCatching { JSONObject(config.readText()) }.getOrNull() ?: JSONObject()
+        val services = json.optJSONObject("Services") ?: JSONObject().also { json.put("Services", it) }
+        if (services.optString("LastLoginRegion") == region) return false
+        services.put("LastLoginRegion", region)
+        services.put("LastLoginAddress", "${region.lowercase()}.actual.battle.net")
+        services.remove("LastLoginTassadar")
+        config.parentFile?.mkdirs()
+        config.writeText(json.toString(2))
+        return true
+    }
+
     fun installerFile(downloadDir: File = File(DOWNLOAD_DIR)): File = File(downloadDir, INSTALLER_NAME)
 
     fun isInstalled(containerRoot: File?): Boolean = containerRoot != null && File(containerRoot, LAUNCHER_PREFIX_PATH).isFile

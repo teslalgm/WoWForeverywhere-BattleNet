@@ -1036,6 +1036,10 @@ internal fun prepareLaunch(
             if (exe == BattleNet.LAUNCHER_WINDOWS_PATH) {
                 runCatching { BattleNet.disableHardwareAcceleration(rootDir) }
                     .onFailure { Timber.w(it, "Couldn't turn off Battle.net hardware acceleration") }
+                runCatching { installPortal(gameRoot, product) }.getOrNull()?.let { portal ->
+                    runCatching { if (BattleNet.setLoginRegion(rootDir, portal)) Timber.i("Battle.net login region set to %s", portal) }
+                        .onFailure { Timber.w(it, "Couldn't set Battle.net's login region") }
+                }
             }
             // 32-bit emulator per program. The installer needs Box64 (FEX's libwow64fex overflowed its stack on it),
             // but Battle.net itself deadlocked inside wowbox64 0.4.2 with its main thread holding a Box64 lock, so it
