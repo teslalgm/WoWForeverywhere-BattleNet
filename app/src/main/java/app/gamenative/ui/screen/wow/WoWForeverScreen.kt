@@ -1044,6 +1044,11 @@ internal fun prepareLaunch(
             // Upstream FEX 2605's libwow64fex overflowed the 64-bit stack inside wow64.dll on Battle.net.exe's main
             // thread too (third test). WoW Box's FEX carries Battle.net-specific fixes, so Battle.net uses that build.
             setFEXCoreVersion(BattleNet.FEX_VERSION)
+            // Full x86 memory ordering for Battle.net (vector and memcpy/memset stores too). After login it crashed in
+            // its libcurl reading data->conn as null right after the async DNS path had used it, and the next run
+            // hung loading the password page: the signs of a cross-thread ordering race. Only Battle.net runs
+            // through FEX; the game is native ARM64, so this costs it nothing.
+            setFEXCorePreset(com.winlator.fexcore.FEXCorePreset.STABILITY)
             if (exe == BattleNet.LAUNCHER_WINDOWS_PATH) {
                 // Battle.net's main thread died (FEX: 64-bit stack overflow in wow64.dll; Box64: deadlock) right after
                 // Qt loaded Wine's directmanipulation.dll, with both emulators and both FEX builds. Disabling the DLL
