@@ -236,6 +236,7 @@ object BattleNet {
 
     /** Where earlier test builds had Battle.net register the game; the Agent refused both. */
     private val OLD_INSTALL_PATHS = setOf("C:/WoW Forever", "G:/", "G:")
+    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset"
     private const val OLD_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
     private const val AGENT_DB_PREFIX_PATH = ".wine/drive_c/ProgramData/Battle.net/Agent/product.db"
 
@@ -244,8 +245,19 @@ object BattleNet {
      * [gameDrive]): removes the C:\\WoW Forever link (ours only) and, from the Agent's product.db, only wowf entries
      * at one of [OLD_INSTALL_PATHS], after a backup; every other entry is copied byte for byte.
      */
-    fun removeOldGameLink(containerRoot: File): String {
+    fun removeOldGameLink(containerRoot: File, gameRoot: File): String {
         val notes = mutableListOf<String>()
+        // Once: bnet-test-35 registered H:/<folder>, then the Agent marked it non-playable (2123, the chmod the
+        // FUSE shim now allows) and queued an update, in its product.db and in the game's .product.db. Drop that
+        // registration and that file so the game is located afresh; the marker keeps a good later one untouched.
+        val resetMarker = File(containerRoot, H_RESET_MARKER)
+        val dropPaths = if (resetMarker.exists()) OLD_INSTALL_PATHS else OLD_INSTALL_PATHS + gameInstallPath(gameRoot)
+        if (!resetMarker.exists()) {
+            val gameDb = File(gameRoot, ".product.db")
+            if (gameDb.isFile && ProtoField.installPathOf(gameDb.readBytes()) == gameInstallPath(gameRoot)) {
+                gameDb.delete(); notes += "game .product.db reset"
+            }
+        }
         val link = File(containerRoot, OLD_LINK_PREFIX_PATH).toPath()
         if (java.nio.file.Files.isSymbolicLink(link)) { java.nio.file.Files.delete(link); notes += "link removed" }
         val agentDb = File(containerRoot, AGENT_DB_PREFIX_PATH)
@@ -254,7 +266,7 @@ object BattleNet {
             val kept = java.io.ByteArrayOutputStream()
             var dropped = 0
             for (field in ProtoField.parse(bytes)) {
-                if (field.number == 1 && field.isOldLinkInstall()) { dropped++; continue }
+                if (field.number == 1 && field.isWowfAt(dropPaths)) { dropped++; continue }
                 kept.write(bytes, field.start, field.end - field.start)
             }
             if (dropped > 0) {
@@ -264,16 +276,17 @@ object BattleNet {
                 notes += "dropped $dropped old wowf entry from the Agent's product.db"
             }
         }
+        if (!resetMarker.exists()) resetMarker.writeText("bnet-test-37\n")
         return notes.joinToString().ifEmpty { "nothing to undo" }
     }
 
     /** One top-level protobuf field: its number, and where it starts (tag) and ends in the buffer. */
     private class ProtoField(val number: Int, val start: Int, val end: Int, val payload: ByteArray?) {
-        /** A ProductInstall with uid "wowf" (field 1) whose install_path is one of [OLD_INSTALL_PATHS]. */
-        fun isOldLinkInstall(): Boolean = runCatching {
+        /** A ProductInstall with uid "wowf" (field 1) whose install_path is one of [paths]. */
+        fun isWowfAt(paths: Set<String>): Boolean = runCatching {
             val install = payload ?: return false
             val uid = parse(install).firstOrNull { it.number == 1 }?.payload?.toString(Charsets.UTF_8)
-            uid == "wowf" && installPathOf(install) in OLD_INSTALL_PATHS
+            uid == "wowf" && installPathOf(install) in paths
         }.getOrDefault(false)
 
         companion object {
