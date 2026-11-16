@@ -64,26 +64,42 @@ object BattleNet {
     private const val NT_FONTS_KEY = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
     private const val FONTS_KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Fonts"
 
-    /** Registry names for the fonts copied into C:\\windows\\Fonts (Tahoma is Wine's own, LGPL). */
+    /** Registry names for the fonts copied into C:\\windows\\Fonts, which is the only list DirectWrite reads. */
     private val REGISTERED_FONTS = listOf(
-        "Tahoma (TrueType)" to "tahoma.ttf",
-        "Tahoma Bold (TrueType)" to "tahomabd.ttf",
         "DejaVu Sans (TrueType)" to "DejaVuSans.ttf",
         "DejaVu Sans Bold (TrueType)" to "DejaVuSans-Bold.ttf",
         "DejaVu Sans Mono (TrueType)" to "DejaVuSansMono.ttf",
         "DejaVu Sans Mono Bold (TrueType)" to "DejaVuSansMono-Bold.ttf",
         "DejaVu Serif (TrueType)" to "DejaVuSerif.ttf",
         "DejaVu Serif Bold (TrueType)" to "DejaVuSerif-Bold.ttf",
+        "Source Han Sans CN Regular (OpenType)" to "SourceHanSansCN-Regular.otf",
     )
+
+    /**
+     * Taken out of DirectWrite's list so the Tahoma replacement below applies there. Wine's Tahoma has only ~850
+     * glyphs (no Cyrillic, most of Latin Extended), and Wine's DirectWrite fallback sends all Latin and Cyrillic text
+     * to Tahoma only: a character Tahoma lacks made Chromium retry Tahoma, then "sans", one level deeper each time,
+     * until the stack ran out (ninth test, +dwrite). GDI keeps Wine's real Tahoma from Wine's own font folder.
+     */
+    private val UNREGISTERED_FONTS = listOf("Tahoma (TrueType)", "Tahoma Bold (TrueType)")
 
     /**
      * Windows UI fonts Battle.net's Chromium asks for, and the open font Wine shows in their place. Wine only uses a
      * replacement when the real font isn't installed, so a prefix that has Arial keeps it.
      */
     private val FONT_REPLACEMENTS = listOf(
+        // DirectWrite: Wine's fallback table names these families for whole scripts.
+        "Tahoma" to "DejaVu Sans", "Tahoma Bold" to "DejaVu Sans", "sans" to "DejaVu Sans", "sans-serif" to "DejaVu Sans",
+        "Microsoft Sans Serif" to "DejaVu Sans", "Noto Sans Armenian" to "DejaVu Sans", "Noto Sans Hebrew" to "DejaVu Sans",
+        "Noto Sans Arabic" to "DejaVu Sans", "Noto Sans Georgian" to "DejaVu Sans",
+        "Microsoft YaHei" to "Source Han Sans CN", "Microsoft JhengHei" to "Source Han Sans CN",
+        "Noto Sans CJK TC" to "Source Han Sans CN", "Malgun Gothic" to "Source Han Sans CN", "Meiryo" to "Source Han Sans CN",
+        "Meiryo UI" to "Source Han Sans CN", "MS Gothic" to "Source Han Sans CN", "Yu Gothic" to "Source Han Sans CN",
+        "Yu Gothic UI" to "Source Han Sans CN", "SimSun" to "Source Han Sans CN", "Gulim" to "Source Han Sans CN",
+        // Windows UI fonts Chromium asks for by name.
         "Segoe UI" to "DejaVu Sans", "Segoe UI Semibold" to "DejaVu Sans", "Segoe UI Light" to "DejaVu Sans",
         "Arial" to "DejaVu Sans", "Helvetica" to "DejaVu Sans", "Verdana" to "DejaVu Sans", "Calibri" to "DejaVu Sans",
-        "Microsoft Sans Serif" to "DejaVu Sans", "MS Shell Dlg" to "DejaVu Sans", "MS Shell Dlg 2" to "DejaVu Sans",
+        "MS Shell Dlg" to "DejaVu Sans", "MS Shell Dlg 2" to "DejaVu Sans",
         "Times New Roman" to "DejaVu Serif", "Georgia" to "DejaVu Serif",
         "Courier New" to "DejaVu Sans Mono", "Consolas" to "DejaVu Sans Mono",
     )
@@ -107,6 +123,10 @@ object BattleNet {
         // had no fonts at all and the stack overflow moved into its FindFamilyName (eighth test).
         File(containerRoot, SYSTEM_REG_PREFIX_PATH).takeIf { it.isFile }?.let { reg ->
             WineRegistryEditor(reg).use { editor ->
+                UNREGISTERED_FONTS.forEach { name ->
+                    editor.removeValue(NT_FONTS_KEY, name)
+                    editor.removeValue(FONTS_KEY, name)
+                }
                 REGISTERED_FONTS.forEach { (name, file) ->
                     if (File(fonts, file).isFile) {
                         editor.setStringValue(NT_FONTS_KEY, name, file)
