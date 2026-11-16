@@ -22,6 +22,7 @@ import timber.log.Timber
  */
 object DebugReport {
     private const val MAX_FILE_BYTES = 1_000_000L
+    private const val MAX_WINE_LOG_BYTES = 8_000_000L
     private const val MAX_LOGCAT_CHARS = 3_000_000
     private val EMAIL = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""")
     private val TEXT_FILES = setOf("txt", "log")
@@ -45,15 +46,16 @@ object DebugReport {
                 out.write(redact(text, secrets).toByteArray())
                 out.closeEntry()
             }
-            fun putFile(name: String, file: File) {
-                if (file.isFile) runCatching { put(name, tail(file)) }.onFailure { Timber.w(it, "Report skipped $name") }
+            fun putFile(name: String, file: File, maxBytes: Long = MAX_FILE_BYTES) {
+                if (file.isFile) runCatching { put(name, tail(file, maxBytes)) }.onFailure { Timber.w(it, "Report skipped $name") }
             }
 
             put("summary.txt", summaryText(summary))
             put("logcat.txt", logcat())
             putFile("app.log", File(DebugLog.dir(context), "app.log"))
             putFile("app.log.1", File(DebugLog.dir(context), "app.log.1"))
-            putFile("wine_debug.log", File(external, "wine_logs/wine_debug.log"))
+            // Wine traces can be long, and what starts a crash can be megabytes before its end.
+            putFile("wine_debug.log", File(external, "wine_logs/wine_debug.log"), MAX_WINE_LOG_BYTES)
             newest(File(external, "crash_logs"), 5).forEach { putFile("crash_logs/${it.name}", it) }
             gameFolder?.let { game ->
                 newest(File(game, "Logs"), 8).forEach { putFile("game/Logs/${it.name}", it) }
@@ -109,8 +111,8 @@ object DebugReport {
         dir.listFiles { f -> f.isFile && f.extension.lowercase() in TEXT_FILES }.orEmpty().sortedByDescending { it.lastModified() }.take(count)
 
     /** The last [MAX_FILE_BYTES] of a file: the end of a log is where a problem shows. */
-    private fun tail(file: File): String = RandomAccessFile(file, "r").use { raf ->
-        val start = (raf.length() - MAX_FILE_BYTES).coerceAtLeast(0)
+    private fun tail(file: File, maxBytes: Long = MAX_FILE_BYTES): String = RandomAccessFile(file, "r").use { raf ->
+        val start = (raf.length() - maxBytes).coerceAtLeast(0)
         raf.seek(start)
         val bytes = ByteArray((raf.length() - start).toInt())
         raf.readFully(bytes)

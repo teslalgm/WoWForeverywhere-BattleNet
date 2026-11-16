@@ -1049,10 +1049,6 @@ internal fun prepareLaunch(
                 // Qt loaded Wine's directmanipulation.dll, with both emulators and both FEX builds. Disabling the DLL
                 // makes Qt's DirectManipulation setup fail cleanly so it skips it.
                 setEnvVars("$envVars WINEDLLOVERRIDES=directmanipulation=d" + battleNetWineDebug(context))
-                // The 32-bit main thread ran out of stack (fourth test: guest ESP at 0x2C54C, below its stack) before
-                // the window drew, and the phone's desktop is only 652 px tall. Battle.net's window is taller than that
-                // on a PC, so Qt may keep re-sizing a window Wine keeps clamping. Give Battle.net a 1080p desktop.
-                setScreenSize(BattleNet.DESKTOP_SIZE)
             }
             executablePath = exe
             execArgs = ""
@@ -1084,8 +1080,9 @@ internal fun prepareLaunch(
 
 /**
  * Battle.net's main thread overflowed its 64-bit stack in wow64's call_user_exception_dispatcher: a 32-bit exception
- * keeps being raised while the previous one is handled, because the 32-bit stack is used up (+seh, fourth test).
- * With Debug logging on, trace window messages (+msg) so the report shows what the main thread recurses through.
+ * keeps being raised while the previous one is handled, because the 32-bit stack is used up (fourth test). No window
+ * messages were involved (+msg, fifth test), so trace exceptions again (+seh); the report now keeps enough of the
+ * log to show the 32-bit exceptions that start it.
  */
 private fun battleNetWineDebug(context: Context): String =
     if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,+loaddll,+msg" else ""
