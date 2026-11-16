@@ -34,6 +34,9 @@ object BattleNet {
     private const val DOWNLOAD_DIR = "/storage/emulated/0/Download"
 
     const val INSTALLER_WINDOWS_PATH = "D:\\$INSTALLER_NAME"
+    /** The native ARM64 client Battle.net is expected to start (the regular launch runs the same file). */
+    const val GAME_EXECUTABLE = "Wow-arm64.exe"
+
     const val LAUNCHER_WINDOWS_PATH = "C:\\Program Files (x86)\\Battle.net\\Battle.net Launcher.exe"
 
     private const val LAUNCHER_PREFIX_PATH = ".wine/drive_c/Program Files (x86)/Battle.net/Battle.net Launcher.exe"

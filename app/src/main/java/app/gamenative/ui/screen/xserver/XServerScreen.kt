@@ -1969,7 +1969,13 @@ fun XServerScreen(
                 keyboard = Keyboard(getxServer())
                 renderer.setUnviewableWMClasses("explorer.exe")
                 if (container.executablePath.isNotBlank()) {
-                    renderer.forceFullscreenWMClass = Paths.get(container.executablePath).name
+                    // Battle.net's own window stays a normal window; the game it starts is the one to show fullscreen.
+                    renderer.forceFullscreenWMClass =
+                        if (container.executablePath == app.gamenative.ui.screen.wow.BattleNet.LAUNCHER_WINDOWS_PATH) {
+                            app.gamenative.ui.screen.wow.BattleNet.GAME_EXECUTABLE
+                        } else {
+                            Paths.get(container.executablePath).name
+                        }
                 }
                 // Remove any previous listener before adding a new one (handles key(isPortrait) recreation)
                 windowModificationListener?.let {
