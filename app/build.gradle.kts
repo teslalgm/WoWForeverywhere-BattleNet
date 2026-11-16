@@ -63,6 +63,7 @@ android {
         minSdk = 26
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
+        manifestPlaceholders["appLabel"] = "@string/app_name"
         buildConfigField("boolean", "XR_BUILD", "false")
 
         versionCode = 26
@@ -145,6 +146,8 @@ android {
             // Test builds of the Battle.net branch install next to the regular app instead of replacing it.
             applicationIdSuffix = ".bnettest"
             versionNameSuffix = "-bnettest"
+            // A different launcher name, so it can't be mistaken for the regular app while testing.
+            manifestPlaceholders["appLabel"] = "WoW BNet Test"
             isDebuggable = true
             isMinifyEnabled = false
             isShrinkResources = false
