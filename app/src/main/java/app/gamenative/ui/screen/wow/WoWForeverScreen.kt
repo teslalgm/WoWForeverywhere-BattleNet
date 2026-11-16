@@ -1052,7 +1052,7 @@ internal fun prepareLaunch(
                 // The 32-bit main thread ran out of stack (fourth test: guest ESP at 0x2C54C, below its stack) before
                 // the window drew, and the phone's desktop is only 652 px tall. Battle.net's window is taller than that
                 // on a PC, so Qt may keep re-sizing a window Wine keeps clamping. Give Battle.net a 1080p desktop.
-                screenSize = BattleNet.DESKTOP_SIZE
+                setScreenSize(BattleNet.DESKTOP_SIZE)
             }
             executablePath = exe
             execArgs = ""
