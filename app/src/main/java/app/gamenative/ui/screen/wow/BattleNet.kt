@@ -225,26 +225,75 @@ object BattleNet {
         return changed
     }
 
-    /** Where the game folder also shows up on C:, for Battle.net's "Locate the game". */
-    const val GAME_LINK_WINDOWS_PATH = "C:\\WoW Forever"
-    private const val GAME_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
+    /** The game folder as Battle.net sees it: drive G: of the container (see the "drives" setting). */
+    const val GAME_INSTALL_PATH = "G:/"
+
+    /** bnet-test-30..32 showed the game folder as C:\\WoW Forever through this symlink. */
+    private const val OLD_LINK_INSTALL_PATH = "C:/WoW Forever"
+    private const val OLD_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
+    private const val AGENT_DB_PREFIX_PATH = ".wine/drive_c/ProgramData/Battle.net/Agent/product.db"
 
     /**
-     * Shows [gameRoot] (G:, on Android's shared storage) as C:\\WoW Forever too, through a symlink in the prefix.
-     * Blizzard's Agent answered "Locate the game" on G:\\ with error 2800 in ~20 ms even with region and .build.info
-     * right (bnet-test-29), and its code rejects drives "of unsupported type"; G: is a FUSE mount, C: is not. Locating
-     * C:\\WoW Forever tells the two apart without touching the game files.
+     * Undoes the C:\\WoW Forever symlink of bnet-test-30..32. The Agent refuses it ("Found symlink while checking
+     * permissions: C:/WoW Forever" -> "Build marked non-playable for wowf: Permissions check failure (2123)") and then
+     * starts an update. Removes the link (ours only) and, from the Agent's product.db, the one wowf entry registered
+     * at C:/WoW Forever, after a backup; every other entry is copied byte for byte. The game is then located on G:.
      */
-    fun linkGameFolder(containerRoot: File, gameRoot: File) {
-        val link = File(containerRoot, GAME_LINK_PREFIX_PATH).toPath()
-        val target = gameRoot.toPath()
-        if (java.nio.file.Files.isSymbolicLink(link)) {
-            if (java.nio.file.Files.readSymbolicLink(link) == target) return
-            java.nio.file.Files.delete(link)
-        } else if (java.nio.file.Files.exists(link)) {
-            return // Something real is there; leave it alone.
+    fun removeOldGameLink(containerRoot: File): String {
+        val notes = mutableListOf<String>()
+        val link = File(containerRoot, OLD_LINK_PREFIX_PATH).toPath()
+        if (java.nio.file.Files.isSymbolicLink(link)) { java.nio.file.Files.delete(link); notes += "link removed" }
+        val agentDb = File(containerRoot, AGENT_DB_PREFIX_PATH)
+        if (agentDb.isFile) {
+            val bytes = agentDb.readBytes()
+            val kept = java.io.ByteArrayOutputStream()
+            var dropped = 0
+            for (field in ProtoField.parse(bytes)) {
+                if (field.number == 1 && field.isOldLinkInstall()) { dropped++; continue }
+                kept.write(bytes, field.start, field.end - field.start)
+            }
+            if (dropped > 0) {
+                File(agentDb.parentFile, "product.db.foreverywhere-backup").writeBytes(bytes)
+                agentDb.writeBytes(kept.toByteArray())
+                notes += "dropped $dropped wowf entry at $OLD_LINK_INSTALL_PATH from the Agent's product.db"
+            }
         }
-        java.nio.file.Files.createSymbolicLink(link, target)
+        return notes.joinToString().ifEmpty { "nothing to undo" }
+    }
+
+    /** One top-level protobuf field: its number, and where it starts (tag) and ends in the buffer. */
+    private class ProtoField(val number: Int, val start: Int, val end: Int, val payload: ByteArray?) {
+        /** A ProductInstall with uid "wowf" (field 1) whose settings (field 3) have install_path (1) C:/WoW Forever. */
+        fun isOldLinkInstall(): Boolean = runCatching {
+            val fields = parse(payload ?: return false)
+            fun str(fs: List<ProtoField>, n: Int) = fs.firstOrNull { it.number == n }?.payload?.toString(Charsets.UTF_8)
+            val settings = fields.firstOrNull { it.number == 3 }?.payload ?: return false
+            str(fields, 1) == "wowf" && str(parse(settings), 1) == OLD_LINK_INSTALL_PATH
+        }.getOrDefault(false)
+
+        companion object {
+            fun parse(b: ByteArray): List<ProtoField> {
+                val out = mutableListOf<ProtoField>()
+                var i = 0
+                fun varint(): Long { var r = 0L; var s = 0; while (true) { val c = b[i++].toInt() and 0xFF; r = r or ((c and 0x7F).toLong() shl s); s += 7; if (c < 0x80) return r } }
+                while (i < b.size) {
+                    val start = i
+                    val key = varint()
+                    val number = (key ushr 3).toInt()
+                    var payload: ByteArray? = null
+                    when ((key and 7).toInt()) {
+                        0 -> varint()
+                        1 -> i += 8
+                        2 -> { val len = varint().toInt(); payload = b.copyOfRange(i, i + len); i += len }
+                        5 -> i += 4
+                        else -> error("unsupported wire type in product.db")
+                    }
+                    require(i <= b.size) { "truncated product.db" }
+                    out += ProtoField(number, start, i, payload)
+                }
+                return out
+            }
+        }
     }
 
     /**
@@ -253,11 +302,13 @@ object BattleNet {
      * "<folder>/.product.db" (Agent 9873: 0x4be322 -> 0x482f9d -> 0x475642, "Failed to read db info from ...") and
      * answers 2800 when that list is empty; the Foreverywhere download has no such file. The layout copies a real
      * Battle.net-installed WoW Forever folder's .product.db field for field; version, build key, tags and region come
-     * from this folder's .build.info. An existing file is never touched: once registered, the Agent owns it.
+     * from this folder's .build.info. An existing file is kept (once registered, the Agent owns it), except one
+     * still pointing at the old C:/WoW Forever link.
      */
     fun writeProductDb(gameRoot: File): String {
         val db = File(gameRoot, ".product.db")
-        if (db.exists()) return "kept"
+        // bnet-test-31/32 wrote C:/WoW Forever here (the symlink the Agent refuses); that one is ours to replace.
+        if (db.exists() && !db.readBytes().toString(Charsets.ISO_8859_1).contains(OLD_LINK_INSTALL_PATH)) return "kept"
         val lines = File(gameRoot, ".build.info").readLines().filter { it.isNotBlank() }
         val header = lines.first().split('|').map { it.substringBefore('!') }
         val row = lines.drop(1).map { it.split('|') }.firstOrNull { it.getOrNull(header.indexOf("Active")) == "1" }
@@ -269,7 +320,7 @@ object BattleNet {
             str(1, product)
             str(2, product)
             msg(3, Proto().apply {
-                str(1, GAME_LINK_WINDOWS_PATH.replace('\\', '/'))
+                str(1, GAME_INSTALL_PATH)
                 str(2, col("Branch").ifEmpty { "eu" })
                 int(3, 2); int(4, 2); int(5, 3)
                 str(6, "enUS"); str(7, "enUS")

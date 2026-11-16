@@ -1036,8 +1036,8 @@ internal fun prepareLaunch(
             if (exe == BattleNet.LAUNCHER_WINDOWS_PATH) {
                 runCatching { BattleNet.disableHardwareAcceleration(rootDir) }
                     .onFailure { Timber.w(it, "Couldn't turn off Battle.net hardware acceleration") }
-                runCatching { BattleNet.linkGameFolder(rootDir, gameRoot) }
-                    .onFailure { Timber.w(it, "Couldn't link the game folder into C:") }
+                runCatching { Timber.i("Old C: game link: %s", BattleNet.removeOldGameLink(rootDir)) }
+                    .onFailure { Timber.w(it, "Couldn't undo the old C: game link") }
                 runCatching { Timber.i("Game .product.db: %s", BattleNet.writeProductDb(gameRoot)) }
                     .onFailure { Timber.w(it, "Couldn't write the game's .product.db") }
                 runCatching { installPortal(gameRoot, product) }.getOrNull()?.let { portal ->
