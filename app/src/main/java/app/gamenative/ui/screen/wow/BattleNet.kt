@@ -56,25 +56,69 @@ object BattleNet {
 
     private const val USER_REG_PREFIX_PATH = ".wine/user.reg"
     private const val DEBUG_KEY = "[Software\\\\Wine\\\\Debug]"
+    private const val REPLACEMENTS_KEY = "[Software\\\\Wine\\\\Fonts\\\\Replacements]"
+    private const val FONTS_PREFIX_PATH = ".wine/drive_c/windows/Fonts"
+    private const val FONT_ASSETS = "battlenet_fonts"
 
     /**
-     * Turns Wine's relay trace on or off for calls libcef.dll makes into the windowing DLLs. Battle.net's main thread
-     * recurses inside libcef until its 32-bit stack runs out (sixth test); the return address of every such call
-     * shows which libcef code is on that loop. Only takes effect with +relay in WINEDEBUG.
+     * Windows UI fonts Battle.net's Chromium asks for, and the open font Wine shows in their place. Wine only uses a
+     * replacement when the real font isn't installed, so a prefix that has Arial keeps it.
      */
-    fun setRelayTrace(containerRoot: File, enabled: Boolean) {
+    private val FONT_REPLACEMENTS = listOf(
+        "Segoe UI" to "DejaVu Sans", "Segoe UI Semibold" to "DejaVu Sans", "Segoe UI Light" to "DejaVu Sans",
+        "Arial" to "DejaVu Sans", "Helvetica" to "DejaVu Sans", "Verdana" to "DejaVu Sans", "Calibri" to "DejaVu Sans",
+        "Microsoft Sans Serif" to "DejaVu Sans", "MS Shell Dlg" to "DejaVu Sans", "MS Shell Dlg 2" to "DejaVu Sans",
+        "Times New Roman" to "DejaVu Serif", "Georgia" to "DejaVu Serif",
+        "Courier New" to "DejaVu Sans Mono", "Consolas" to "DejaVu Sans Mono",
+    )
+
+    /**
+     * Gives the prefix real TrueType fonts for Battle.net. Its main thread recursed inside libcef's text code until
+     * the 32-bit stack ran out (sixth and seventh tests): the deepest frame was Chromium's font render-settings lookup,
+     * and the prefix only has Wine's Tahoma plus bitmap fonts. WoW Box, which gets Battle.net to its login screen,
+     * ships DejaVu in C:\\windows\\Fonts. Copies DejaVu (free licence, see LICENSE-DejaVu.txt) there and maps the
+     * Windows UI font names onto it. Returns what the Fonts folder holds afterwards, for the log.
+     */
+    fun installFonts(context: android.content.Context, containerRoot: File): List<String> {
+        val fonts = File(containerRoot, FONTS_PREFIX_PATH).apply { mkdirs() }
+        context.assets.list(FONT_ASSETS).orEmpty().forEach { name ->
+            val target = File(fonts, name)
+            if (!target.isFile) context.assets.open("$FONT_ASSETS/$name").use { input -> target.outputStream().use { input.copyTo(it) } }
+        }
+        setUserRegSection(containerRoot, REPLACEMENTS_KEY, FONT_REPLACEMENTS.map { it.first to it.second })
+        return fonts.list().orEmpty().sorted()
+    }
+
+    /**
+     * Turns Wine's relay trace on or off for calls libcef.dll makes into the windowing DLLs. Only takes effect with
+     * +relay in WINEDEBUG.
+     */
+    fun setRelayTrace(containerRoot: File, enabled: Boolean) = setUserRegSection(
+        containerRoot,
+        DEBUG_KEY,
+        if (enabled) {
+            listOf(
+                "RelayFromInclude" to "libcef.dll",
+                "RelayInclude" to "user32;gdi32;imm32;uxtheme;dwmapi;shcore;ole32;combase;shell32;comctl32",
+            )
+        } else {
+            null
+        },
+    )
+
+    /** Replaces one key's section in the prefix's user.reg with [values] (string values), or drops it for null. */
+    private fun setUserRegSection(containerRoot: File, key: String, values: List<Pair<String, String>>?) {
         val reg = File(containerRoot, USER_REG_PREFIX_PATH)
         if (!reg.isFile) return
         val kept = StringBuilder()
         var skipping = false
         reg.readLines().forEach { line ->
-            if (line.startsWith("[")) skipping = line.startsWith(DEBUG_KEY)
+            if (line.startsWith("[")) skipping = line.startsWith(key)
             if (!skipping) kept.append(line).append('\n')
         }
-        if (enabled) {
-            kept.append('\n').append(DEBUG_KEY).append(' ').append(System.currentTimeMillis() / 1000).append('\n')
-            kept.append("\"RelayFromInclude\"=\"libcef.dll\"\n")
-            kept.append("\"RelayInclude\"=\"user32;gdi32;imm32;uxtheme;dwmapi;shcore;ole32;combase;shell32;comctl32\"\n")
+        if (values != null) {
+            kept.append('\n').append(key).append(' ').append(System.currentTimeMillis() / 1000).append('\n')
+            values.forEach { (name, value) -> kept.append('"').append(name).append("\"=\"").append(value).append("\"\n") }
         }
         reg.writeText(kept.toString())
     }
