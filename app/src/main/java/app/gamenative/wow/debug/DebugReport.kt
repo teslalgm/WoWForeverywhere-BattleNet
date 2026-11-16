@@ -64,7 +64,12 @@ object DebugReport {
             // was doing when it failed, which Wine's log can't.
             battleNetLogs(context).forEach { (name, file) -> putFile("battle.net/$name", file) }
             // The Agent's install database (protobuf): which region each install, Battle.net's own included, is on.
-            battleNetProductDb(context)?.let { db -> runCatching { put("battle.net/product.db.txt", printable(db.readBytes())) } }
+            battleNetProductDb(context)?.let { db ->
+                runCatching { put("battle.net/product.db.txt", printable(db.readBytes())) }
+                // Battle.net's own install metadata, next to its exe.
+                File(db.parentFile?.parentFile?.parentFile, "Program Files (x86)/Battle.net/.build.info")
+                    .takeIf { it.isFile }?.let { putFile("battle.net/Battle.net-install.build.info", it) }
+            }
             gameFolder?.let { game ->
                 // Install metadata Battle.net's Agent reads when it registers ("Locate the game") the install.
                 val installRoot = if (game.name == "_forever_") game.parentFile else game
@@ -172,7 +177,6 @@ object DebugReport {
         ".wine/drive_c/users/xuser/AppData/Local/Blizzard Entertainment",
         ".wine/drive_c/ProgramData/Battle.net",
         ".wine/drive_c/ProgramData/Blizzard Entertainment",
-        ".wine/drive_c/Program Files (x86)/Battle.net",
     )
     private val BATTLE_NET_LOG_TYPES = setOf("log", "txt", "json", "config", "info")
 
