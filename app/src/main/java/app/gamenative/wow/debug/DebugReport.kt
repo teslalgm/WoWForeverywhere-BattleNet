@@ -23,6 +23,7 @@ import timber.log.Timber
 object DebugReport {
     private const val MAX_FILE_BYTES = 1_000_000L
     private const val MAX_WINE_LOG_BYTES = 8_000_000L
+    private const val WINE_LOG_HEAD_CHARS = 300_000
     private const val MAX_LOGCAT_CHARS = 3_000_000
     private val EMAIL = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""")
     private val TEXT_FILES = setOf("txt", "log")
@@ -55,7 +56,9 @@ object DebugReport {
             putFile("app.log", File(DebugLog.dir(context), "app.log"))
             putFile("app.log.1", File(DebugLog.dir(context), "app.log.1"))
             // Wine traces can be long, and what starts a crash can be megabytes before its end.
-            putFile("wine_debug.log", File(external, "wine_logs/wine_debug.log"), MAX_WINE_LOG_BYTES)
+            File(external, "wine_logs/wine_debug.log").takeIf { it.isFile }?.let { log ->
+                runCatching { put("wine_debug.log", wineLog(log)) }.onFailure { Timber.w(it, "Report skipped wine_debug.log") }
+            }
             newest(File(external, "crash_logs"), 5).forEach { putFile("crash_logs/${it.name}", it) }
             gameFolder?.let { game ->
                 newest(File(game, "Logs"), 8).forEach { putFile("game/Logs/${it.name}", it) }
@@ -109,6 +112,42 @@ object DebugReport {
 
     private fun newest(dir: File, count: Int): List<File> =
         dir.listFiles { f -> f.isFile && f.extension.lowercase() in TEXT_FILES }.orEmpty().sortedByDescending { it.lastModified() }.take(count)
+
+    /**
+     * Unwind backtraces and handler calls that a nested-exception loop repeats thousands of times (+seh). They filled
+     * an 8 MB report on their own and pushed out the exceptions that started the loop.
+     */
+    private val WINE_LOOP_NOISE = listOf(":seh:virtual_unwind backtrace:", ":seh:call_seh_handlers ")
+
+    /**
+     * The Wine log for a report: its first lines, then the last [MAX_WINE_LOG_BYTES] once [WINE_LOOP_NOISE] is
+     * left out, with a note of how much was dropped. Read line by line, so a log of any size fits in memory.
+     */
+    private fun wineLog(file: File): String {
+        val head = StringBuilder()
+        val tail = ArrayDeque<String>()
+        var tailBytes = 0L
+        var lines = 0L
+        var noise = 0L
+        var cut = 0L
+        file.bufferedReader().useLines { all ->
+            all.forEach { line ->
+                lines++
+                if (WINE_LOOP_NOISE.any { line.contains(it) }) { noise++; return@forEach }
+                if (head.length < WINE_LOG_HEAD_CHARS) { head.append(line).append('\n'); return@forEach }
+                tail.addLast(line)
+                tailBytes += line.length + 1
+                while (tailBytes > MAX_WINE_LOG_BYTES) { tailBytes -= tail.removeFirst().length + 1; cut++ }
+            }
+        }
+        return buildString {
+            append("[wine_debug.log: ${file.length()} bytes, $lines lines; $noise repeated unwind/handler lines left out")
+            append(if (cut > 0) "; $cut lines between the head and the tail left out]\n" else "]\n")
+            append(head)
+            if (cut > 0) append("[... $cut lines left out ...]\n")
+            tail.forEach { append(it).append('\n') }
+        }
+    }
 
     /** The last [MAX_FILE_BYTES] of a file: the end of a log is where a problem shows. */
     private fun tail(file: File, maxBytes: Long = MAX_FILE_BYTES): String = RandomAccessFile(file, "r").use { raf ->
