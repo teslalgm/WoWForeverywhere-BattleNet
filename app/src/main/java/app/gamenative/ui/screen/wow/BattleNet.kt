@@ -29,6 +29,9 @@ object BattleNet {
      */
     const val FEX_VERSION = "2508-wowbox"
 
+    /** Wine desktop size while Battle.net runs; the phone-shaped desktop is shorter than Battle.net's window. */
+    const val DESKTOP_SIZE = "1920x1080"
+
     /** Android's shared Download folder, mounted as D: (see the container's drives). */
     private const val DOWNLOAD_DIR = "/storage/emulated/0/Download"
 
