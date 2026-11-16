@@ -1080,6 +1080,9 @@ private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile
         // x64 programs (the Battle.net app) run through FEX in this ARM64EC prefix; the game itself stays native ARM64.
         // The FEX build is bundled as assets/fexcore/fexcore-<version>.tzst, taken from upstream GameNative.
         put("fexcoreVersion", com.winlator.core.DefaultVersion.FEXCORE)
+        // 32-bit programs (the Battle.net installer) go through Box64's wowbox64.dll instead: FEX's libwow64fex.dll hit
+        // a stack overflow at start-up in this Proton build (first Battle.net test, Xiaomi 25102PCBEG). x64 still uses FEX.
+        put("emulator", "Box64")
         put("drives", "D:/storage/emulated/0/DownloadE:/data/data/${BuildConfig.APPLICATION_ID}/storageG:${gameRoot.path}")
         put("executablePath", "G:\\${product.flavorDir}\\${product.armExe}")
         put("execArgs", "-d3d11")
