@@ -64,6 +64,17 @@ object DebugReport {
             // was doing when it failed, which Wine's log can't.
             battleNetLogs(context).forEach { (name, file) -> putFile("battle.net/$name", file) }
             gameFolder?.let { game ->
+                // Install metadata Battle.net's Agent reads when it registers ("Locate the game") the install.
+                val installRoot = if (game.name == "_forever_") game.parentFile else game
+                listOf(".build.info", ".product.db", ".flavor.info", "_forever_/.flavor.info", ".patch.result").forEach { name ->
+                    File(installRoot, name).takeIf { it.isFile && it.length() < 64_000 }
+                        ?.let { putFile("game_root/${name.replace('/', '_')}", it) }
+                }
+                put(
+                    "game_root/listing.txt",
+                    installRoot?.listFiles().orEmpty().sortedBy { it.name }
+                        .joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.length()} ${it.name}" },
+                )
                 newest(File(game, "Logs"), 8).forEach { putFile("game/Logs/${it.name}", it) }
                 newest(File(game, "Errors"), 5).forEach { putFile("game/Errors/${it.name}", it) }
             }
