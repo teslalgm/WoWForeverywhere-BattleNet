@@ -225,6 +225,28 @@ object BattleNet {
         return changed
     }
 
+    /** Where the game folder also shows up on C:, for Battle.net's "Locate the game". */
+    const val GAME_LINK_WINDOWS_PATH = "C:\\WoW Forever"
+    private const val GAME_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
+
+    /**
+     * Shows [gameRoot] (G:, on Android's shared storage) as C:\\WoW Forever too, through a symlink in the prefix.
+     * Blizzard's Agent answered "Locate the game" on G:\\ with error 2800 in ~20 ms even with region and .build.info
+     * right (bnet-test-29), and its code rejects drives "of unsupported type"; G: is a FUSE mount, C: is not. Locating
+     * C:\\WoW Forever tells the two apart without touching the game files.
+     */
+    fun linkGameFolder(containerRoot: File, gameRoot: File) {
+        val link = File(containerRoot, GAME_LINK_PREFIX_PATH).toPath()
+        val target = gameRoot.toPath()
+        if (java.nio.file.Files.isSymbolicLink(link)) {
+            if (java.nio.file.Files.readSymbolicLink(link) == target) return
+            java.nio.file.Files.delete(link)
+        } else if (java.nio.file.Files.exists(link)) {
+            return // Something real is there; leave it alone.
+        }
+        java.nio.file.Files.createSymbolicLink(link, target)
+    }
+
     fun installerFile(downloadDir: File = File(DOWNLOAD_DIR)): File = File(downloadDir, INSTALLER_NAME)
 
     fun isInstalled(containerRoot: File?): Boolean = containerRoot != null && File(containerRoot, LAUNCHER_PREFIX_PATH).isFile
