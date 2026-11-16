@@ -1129,7 +1129,8 @@ private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile
         // 32-bit programs (the Battle.net installer) go through Box64's wowbox64.dll instead: FEX's libwow64fex.dll hit
         // a stack overflow at start-up in this Proton build (first Battle.net test, Xiaomi 25102PCBEG). x64 still uses FEX.
         put("emulator", "Box64")
-        put("drives", "D:/storage/emulated/0/DownloadE:/data/data/${BuildConfig.APPLICATION_ID}/storageG:${gameRoot.path}")
+        // H: is only for Battle.net, which must see the game as a plain folder (BattleNet.gameDrive).
+        put("drives", "D:/storage/emulated/0/DownloadE:/data/data/${BuildConfig.APPLICATION_ID}/storageG:${gameRoot.path}${BattleNet.gameDrive(gameRoot)}")
         put("executablePath", "G:\\${product.flavorDir}\\${product.armExe}")
         put("execArgs", "-d3d11")
         put("showFPS", true)

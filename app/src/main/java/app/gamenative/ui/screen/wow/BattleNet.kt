@@ -225,19 +225,24 @@ object BattleNet {
         return changed
     }
 
-    /** The game folder as Battle.net sees it: drive G: of the container (see the "drives" setting). */
-    const val GAME_INSTALL_PATH = "G:/"
+    /**
+     * Drive H: is the game folder's parent, so Battle.net sees the game as a plain folder, H:/<name>. The Agent checks
+     * the install folder's type and refuses anything that isn't a plain directory ("Found symlink while checking
+     * permissions" -> Permissions check failure 2123 -> forced update): C:/WoW Forever (a symlink, bnet-test-31) and
+     * G: (a drive root linked to shared storage, bnet-test-34) both failed. G: stays as it is for the game itself.
+     */
+    fun gameDrive(gameRoot: File): String = "H:${gameRoot.absoluteFile.parent}"
+    fun gameInstallPath(gameRoot: File): String = "H:/${gameRoot.absoluteFile.name}"
 
-    /** bnet-test-30..32 showed the game folder as C:\\WoW Forever through this symlink. */
-    private const val OLD_LINK_INSTALL_PATH = "C:/WoW Forever"
+    /** Where earlier test builds had Battle.net register the game; the Agent refused both. */
+    private val OLD_INSTALL_PATHS = setOf("C:/WoW Forever", "G:/", "G:")
     private const val OLD_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
     private const val AGENT_DB_PREFIX_PATH = ".wine/drive_c/ProgramData/Battle.net/Agent/product.db"
 
     /**
-     * Undoes the C:\\WoW Forever symlink of bnet-test-30..32. The Agent refuses it ("Found symlink while checking
-     * permissions: C:/WoW Forever" -> "Build marked non-playable for wowf: Permissions check failure (2123)") and then
-     * starts an update. Removes the link (ours only) and, from the Agent's product.db, the one wowf entry registered
-     * at C:/WoW Forever, after a backup; every other entry is copied byte for byte. The game is then located on G:.
+     * Undoes the registrations of earlier test builds that the Agent refused and then wanted to update (see
+     * [gameDrive]): removes the C:\\WoW Forever link (ours only) and, from the Agent's product.db, only wowf entries
+     * at one of [OLD_INSTALL_PATHS], after a backup; every other entry is copied byte for byte.
      */
     fun removeOldGameLink(containerRoot: File): String {
         val notes = mutableListOf<String>()
@@ -253,9 +258,10 @@ object BattleNet {
                 kept.write(bytes, field.start, field.end - field.start)
             }
             if (dropped > 0) {
-                File(agentDb.parentFile, "product.db.foreverywhere-backup").writeBytes(bytes)
+                // Keep the first backup: it is the one from before any of these clean-ups.
+                File(agentDb.parentFile, "product.db.foreverywhere-backup").takeUnless { it.exists() }?.writeBytes(bytes)
                 agentDb.writeBytes(kept.toByteArray())
-                notes += "dropped $dropped wowf entry at $OLD_LINK_INSTALL_PATH from the Agent's product.db"
+                notes += "dropped $dropped old wowf entry from the Agent's product.db"
             }
         }
         return notes.joinToString().ifEmpty { "nothing to undo" }
@@ -263,15 +269,20 @@ object BattleNet {
 
     /** One top-level protobuf field: its number, and where it starts (tag) and ends in the buffer. */
     private class ProtoField(val number: Int, val start: Int, val end: Int, val payload: ByteArray?) {
-        /** A ProductInstall with uid "wowf" (field 1) whose settings (field 3) have install_path (1) C:/WoW Forever. */
+        /** A ProductInstall with uid "wowf" (field 1) whose install_path is one of [OLD_INSTALL_PATHS]. */
         fun isOldLinkInstall(): Boolean = runCatching {
-            val fields = parse(payload ?: return false)
-            fun str(fs: List<ProtoField>, n: Int) = fs.firstOrNull { it.number == n }?.payload?.toString(Charsets.UTF_8)
-            val settings = fields.firstOrNull { it.number == 3 }?.payload ?: return false
-            str(fields, 1) == "wowf" && str(parse(settings), 1) == OLD_LINK_INSTALL_PATH
+            val install = payload ?: return false
+            val uid = parse(install).firstOrNull { it.number == 1 }?.payload?.toString(Charsets.UTF_8)
+            uid == "wowf" && installPathOf(install) in OLD_INSTALL_PATHS
         }.getOrDefault(false)
 
         companion object {
+            /** settings (field 3) -> install_path (field 1) of a ProductInstall, or null. */
+            fun installPathOf(productInstall: ByteArray): String? = runCatching {
+                val settings = parse(productInstall).firstOrNull { it.number == 3 }?.payload ?: return null
+                parse(settings).firstOrNull { it.number == 1 }?.payload?.toString(Charsets.UTF_8)
+            }.getOrNull()
+
             fun parse(b: ByteArray): List<ProtoField> {
                 val out = mutableListOf<ProtoField>()
                 var i = 0
@@ -303,12 +314,12 @@ object BattleNet {
      * answers 2800 when that list is empty; the Foreverywhere download has no such file. The layout copies a real
      * Battle.net-installed WoW Forever folder's .product.db field for field; version, build key, tags and region come
      * from this folder's .build.info. An existing file is kept (once registered, the Agent owns it), except one
-     * still pointing at the old C:/WoW Forever link.
+     * still pointing at a path of an earlier test build.
      */
     fun writeProductDb(gameRoot: File): String {
         val db = File(gameRoot, ".product.db")
-        // bnet-test-31/32 wrote C:/WoW Forever here (the symlink the Agent refuses); that one is ours to replace.
-        if (db.exists() && !db.readBytes().toString(Charsets.ISO_8859_1).contains(OLD_LINK_INSTALL_PATH)) return "kept"
+        // Earlier test builds wrote a path the Agent refuses (C:/WoW Forever, G:/); those are ours to replace.
+        if (db.exists() && ProtoField.installPathOf(db.readBytes()) !in OLD_INSTALL_PATHS) return "kept"
         val lines = File(gameRoot, ".build.info").readLines().filter { it.isNotBlank() }
         val header = lines.first().split('|').map { it.substringBefore('!') }
         val row = lines.drop(1).map { it.split('|') }.firstOrNull { it.getOrNull(header.indexOf("Active")) == "1" }
@@ -320,7 +331,7 @@ object BattleNet {
             str(1, product)
             str(2, product)
             msg(3, Proto().apply {
-                str(1, GAME_INSTALL_PATH)
+                str(1, gameInstallPath(gameRoot))
                 str(2, col("Branch").ifEmpty { "eu" })
                 int(3, 2); int(4, 2); int(5, 3)
                 str(6, "enUS"); str(7, "enUS")
