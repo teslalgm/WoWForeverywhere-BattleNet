@@ -233,7 +233,10 @@ object BattleNet {
      */
     fun gameDrive(gameRoot: File): String = "H:${gameRoot.absoluteFile.parent}"
 
-    private const val H_DEVICE_IMAGE_PREFIX_PATH = ".wine/h_drive_fat32.img"
+    /** bnet-test-41 kept the image in the prefix, inside drive Z:, where Wine judged it by Z: (NTFS). */
+    private const val OLD_H_DEVICE_IMAGE_PREFIX_PATH = ".wine/h_drive_fat32.img"
+    /** Name the preload shim looks for (app/src/main/cpp/gamenative_fuse_chmod.c). */
+    private const val H_DEVICE_IMAGE_NAME = "h_drive_fat32.img"
     private const val H_DEVICE_LINK_PREFIX_PATH = ".wine/dosdevices/h::"
 
     /**
@@ -244,9 +247,13 @@ object BattleNet {
      * storage keeps no Windows permissions anyway. Wine's mount manager takes a drive's file system from the boot
      * sector of its "device" (dosdevices/h::, dlls/mountmgr.sys/device.c: VOLUME_ReadFATSuperblock), so h:: points
      * at a 2 KiB file holding just a FAT32 boot sector; the drive's files stay where they are.
+     * GetVolumeInformation itself queries that device file, and ntdll judges a file outside every Wine drive by
+     * fstatfs(), so the image lives in the app's files folder (outside imagefs, so outside Z:) and the preload shim
+     * reports FAT for that one file (bnet-test-41 had it inside Z: and still got NTFS).
      */
-    fun markGameDriveFat32(containerRoot: File): String {
-        val image = File(containerRoot, H_DEVICE_IMAGE_PREFIX_PATH)
+    fun markGameDriveFat32(context: android.content.Context, containerRoot: File): String {
+        File(containerRoot, OLD_H_DEVICE_IMAGE_PREFIX_PATH).delete()
+        val image = File(context.filesDir, H_DEVICE_IMAGE_NAME)
         val bytes = ByteArray(2048).also { b ->
             fun word(off: Int, v: Int) { b[off] = v.toByte(); b[off + 1] = (v shr 8).toByte() }
             fun long(off: Int, v: Long) { for (i in 0..3) b[off + i] = (v shr (8 * i)).toByte() }
@@ -285,7 +292,7 @@ object BattleNet {
     /** Where earlier test builds had Battle.net register the game; the Agent refused both. */
     private val OLD_INSTALL_PATHS = setOf("C:/WoW Forever", "G:/", "G:")
     // Bumped when a test build changes how the Agent judges the folder, so its refused H: registration is redone.
-    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset-4"
+    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset-5"
     private const val OLD_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
     private const val AGENT_DB_PREFIX_PATH = ".wine/drive_c/ProgramData/Battle.net/Agent/product.db"
 

@@ -1038,7 +1038,7 @@ internal fun prepareLaunch(
                     .onFailure { Timber.w(it, "Couldn't turn off Battle.net hardware acceleration") }
                 runCatching { Timber.i("Old C: game link: %s", BattleNet.removeOldGameLink(rootDir, gameRoot)) }
                     .onFailure { Timber.w(it, "Couldn't undo the old C: game link") }
-                runCatching { Timber.i("Drive H: as FAT32: %s", BattleNet.markGameDriveFat32(rootDir)) }
+                runCatching { Timber.i("Drive H: as FAT32: %s", BattleNet.markGameDriveFat32(context, rootDir)) }
                     .onFailure { Timber.w(it, "Couldn't mark drive H: as FAT32") }
                 runCatching { Timber.i("Game .product.db: %s", BattleNet.writeProductDb(gameRoot)) }
                     .onFailure { Timber.w(it, "Couldn't write the game's .product.db") }

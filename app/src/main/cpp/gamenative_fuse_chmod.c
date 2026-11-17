@@ -9,6 +9,12 @@
  * "not supported / not permitted" error, report success. Every other fchmod() is passed through unchanged, and
  * real access to the files is still decided by Android.
  *
+ * Drive H: as FAT32: Battle.net's Agent skips its folder permission check on volumes without
+ * FILE_PERSISTENT_ACLS. GetVolumeInformation opens the drive's device (dosdevices/h::, a file named
+ * h_drive_fat32.img outside every Wine drive) and, as no drive letter holds it, ntdll falls back to fstatfs() of
+ * that file for the file system type (dlls/ntdll/unix/file.c, FileFsAttributeInformation). fstatfs() of a file with
+ * that name reports MSDOS_SUPER_MAGIC, so Wine answers FAT32. No other file is affected.
+ *
  * Each fchmod that fails, and each one let through, is noted in $WINEPREFIX/fuse_chmod.log (plus one line when
  * wineserver starts with the shim), so a debug report shows whether it was needed at all.
  *
@@ -109,4 +115,54 @@ int fchmod(int fd, mode_t mode)
          (unsigned)mode, strerror(saved_errno), fstatfs(fd, &fs) == 0 ? (unsigned long)fs.f_type : 0UL);
     errno = saved_errno;
     return -1;
+}
+
+#define MSDOS_SUPER_MAGIC 0x4d44
+#define FAT32_IMAGE_SUFFIX "/h_drive_fat32.img"
+
+static int (*real_fstatfs)(int, struct statfs *);
+static int fat_notes;
+
+static int is_fat32_image(int fd)
+{
+    char path[512];
+    size_t len, suffix = sizeof(FAT32_IMAGE_SUFFIX) - 1;
+
+    if (strcmp(fd_path(fd, path, sizeof(path)), "?") == 0) return 0;
+    len = strlen(path);
+    return len > suffix && strcmp(path + len - suffix, FAT32_IMAGE_SUFFIX) == 0;
+}
+
+int fstatfs(int fd, struct statfs *buf)
+{
+    int ret;
+
+    if (!real_fstatfs) real_fstatfs = (int (*)(int, struct statfs *))dlsym(RTLD_NEXT, "fstatfs");
+    if (!real_fstatfs)
+    {
+        errno = ENOSYS;
+        return -1;
+    }
+    ret = real_fstatfs(fd, buf);
+    if (ret == 0 && (unsigned long)buf->f_type != FUSE_SUPER_MAGIC)
+    {
+        int saved_errno = errno;
+        if (is_fat32_image(fd))
+        {
+            buf->f_type = MSDOS_SUPER_MAGIC;
+            if (fat_notes < 5)
+            {
+                fat_notes++;
+                note("pid %d: drive H: device reported as FAT32\n", getpid());
+            }
+        }
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+/* 64-bit bionic and glibc lay out struct statfs64 like struct statfs; Wine may call either name. */
+int fstatfs64(int fd, struct statfs64 *buf)
+{
+    return fstatfs(fd, (struct statfs *)buf);
 }
