@@ -1107,7 +1107,7 @@ internal fun prepareLaunch(
  * log to show the 32-bit exceptions that start it.
  */
 private fun battleNetWineDebug(context: Context): String =
-    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,fixme+all,+loaddll,+seh,+mountmgr,+volume" else ""
+    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,fixme+all,+loaddll,+seh,+mountmgr,+volume,+advapi" else ""
 
 private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile, screenSize: String): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
