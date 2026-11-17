@@ -40,9 +40,12 @@ This project is unofficial. Running Blizzard's Windows software on Android is no
 ## First start
 
 1. On the home screen press **Battle.net (beta)**. The first time, this runs the installer. Let it install to the folder it suggests.
-2. Sign in with your Battle.net account. Once Battle.net is installed, the same button opens it directly.
-3. In Battle.net, open the page of **WoW Forever**. Instead of Install, use **Locate the game** and pick the folder `WoW Forever` on drive `H:`. Select the folder itself, not the drive.
-4. Battle.net then offers **Update**. Press it and wait until it finishes, including the "Reclaiming space" step. This adds Battle.net's own launcher file to the game folder; it does not download the game again.
+2. Sign in with your Battle.net account, then **close the session and press Battle.net (beta) again**. The app prepares the game folder for Battle.net only when it starts an already installed Battle.net, so the next step fails in the session that ran the installer.
+3. In Battle.net, open the page of **WoW Forever**. Do **not** press Install. Under the Install button choose **Locate the game**. A Windows folder window opens:
+   - Open drive **H:**. The app creates this drive for Battle.net; it shows the place on your phone that holds the game folder (internal storage or the SD card), so you will see your other folders there too.
+   - Select the game folder itself and confirm. It has the name the game folder has on your phone, **WoW Forever** unless you put the game somewhere else.
+   - Do not pick `C:` or `G:`. `G:` is the same game folder shown as a whole drive, and Battle.net refuses it (error BLZBNTAGT00000AF0 or a "permissions" error).
+4. Battle.net now shows **Update** instead of Install. Press it and wait until it finishes, including the "Reclaiming space" step. This adds Battle.net's own launcher file to the game folder; it does not download the game again. If Battle.net starts downloading the whole game instead, pause it and close the session: the wrong folder was picked.
 5. In Battle.net's settings:
    - **App → When I launch a game:** keep the Battle.net window open. Do not choose "Exit Battle.net completely"; on a phone the game starts too slowly for that and then cannot sign in.
    - **Notifications:** turn them off. A notification popping up can leave the Battle.net window unresponsive.
