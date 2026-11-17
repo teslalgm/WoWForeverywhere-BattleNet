@@ -1042,15 +1042,14 @@ internal fun prepareLaunch(
                 "Battle.net isn't installed yet. Download Blizzard's Windows installer and save it as Download/${BattleNet.INSTALLER_NAME}, then try again."
             }
             onStatus(if (exe == BattleNet.INSTALLER_WINDOWS_PATH) "Starting the Battle.net installer..." else "Starting Battle.net...")
+            // For the installer too: Battle.net starts right after it, and "Locate the game" needs both.
+            runCatching { Timber.i("Drive H: as FAT32: %s", BattleNet.markGameDriveFat32(context, rootDir)) }
+                .onFailure { Timber.w(it, "Couldn't mark drive H: as FAT32") }
+            runCatching { Timber.i("Game .product.db: %s", BattleNet.writeProductDb(gameRoot)) }
+                .onFailure { Timber.w(it, "Couldn't write the game's .product.db") }
             if (exe == BattleNet.LAUNCHER_WINDOWS_PATH) {
-                runCatching { BattleNet.disableHardwareAcceleration(rootDir) }
-                    .onFailure { Timber.w(it, "Couldn't turn off Battle.net hardware acceleration") }
-                runCatching { Timber.i("Old C: game link: %s", BattleNet.removeOldGameLink(rootDir, gameRoot)) }
-                    .onFailure { Timber.w(it, "Couldn't undo the old C: game link") }
-                runCatching { Timber.i("Drive H: as FAT32: %s", BattleNet.markGameDriveFat32(context, rootDir)) }
-                    .onFailure { Timber.w(it, "Couldn't mark drive H: as FAT32") }
-                runCatching { Timber.i("Game .product.db: %s", BattleNet.writeProductDb(gameRoot)) }
-                    .onFailure { Timber.w(it, "Couldn't write the game's .product.db") }
+                runCatching { BattleNet.applyClientSettings(rootDir) }
+                    .onFailure { Timber.w(it, "Couldn't write Battle.net's settings") }
                 runCatching { installPortal(gameRoot, product) }.getOrNull()?.let { portal ->
                     runCatching { if (BattleNet.setLoginRegion(rootDir, portal)) Timber.i("Battle.net login region set to %s", portal) }
                         .onFailure { Timber.w(it, "Couldn't set Battle.net's login region") }

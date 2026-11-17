@@ -44,6 +44,14 @@ jobs:
       - name: Fetch runtime components
         run: tools/fetch_components.sh
 
+      - name: Build the FUSE chmod shim
+        run: |
+          NDK=$(sed -n 's/.*ndkVersion = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          CC="$ANDROID_HOME/ndk/$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          "$CC" -shared -fPIC -O2 -Wall -Werror -Wl,-z,max-page-size=16384 -s \
+            -o app/src/main/jniLibs/arm64-v8a/libgamenative_fuse_chmod.so app/src/main/cpp/gamenative_fuse_chmod.c -ldl
+          file app/src/main/jniLibs/arm64-v8a/libgamenative_fuse_chmod.so
+
       - name: Configure signing and API keys
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}

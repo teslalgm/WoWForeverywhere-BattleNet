@@ -45,15 +45,21 @@ object BattleNet {
     private const val CONFIG_PREFIX_PATH = ".wine/drive_c/users/xuser/AppData/Roaming/Battle.net/Battle.net.config"
 
     /**
-     * Turns off Battle.net's hardware acceleration. Its embedded Chromium window stays plain grey under Wine with GPU
-     * compositing on (first test, Xiaomi 25102PCBEG), so the login page never shows. Keeps every other setting.
+     * The Battle.net settings this app needs, written before Battle.net starts; every other setting is kept and the
+     * file is left alone when both already hold.
+     *  - HardwareAcceleration "false": the embedded Chromium window stays plain grey under Wine with GPU compositing
+     *    on (first test, Xiaomi 25102PCBEG), so the login page never shows.
+     *  - GameLaunchWindowBehavior "0", keep the Battle.net window open when a game starts. With "2" (exit Battle.net
+     *    completely) Battle.net is gone before the game reaches its login screen, about two minutes on a phone, and
+     *    the launcher login fails. The app closes Battle.net itself once the game is up.
      */
-    fun disableHardwareAcceleration(containerRoot: File) {
+    fun applyClientSettings(containerRoot: File) {
         val config = File(containerRoot, CONFIG_PREFIX_PATH)
         val json = runCatching { JSONObject(config.readText()) }.getOrNull() ?: JSONObject()
         val client = json.optJSONObject("Client") ?: JSONObject().also { json.put("Client", it) }
-        if (client.optString("HardwareAcceleration") == "false") return
-        client.put("HardwareAcceleration", "false")
+        val wanted = mapOf("HardwareAcceleration" to "false", "GameLaunchWindowBehavior" to "0")
+        if (wanted.all { (key, value) -> client.optString(key) == value }) return
+        wanted.forEach { (key, value) -> client.put(key, value) }
         config.parentFile?.mkdirs()
         config.writeText(json.toString(2))
     }
@@ -289,62 +295,8 @@ object BattleNet {
     }
     fun gameInstallPath(gameRoot: File): String = "H:/${gameRoot.absoluteFile.name}"
 
-    /** Where earlier test builds had Battle.net register the game; the Agent refused both. */
-    private val OLD_INSTALL_PATHS = setOf("C:/WoW Forever", "G:/", "G:")
-    // Bumped when a test build changes how the Agent judges the folder, so its refused H: registration is redone.
-    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset-5"
-    private const val OLD_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
-    private const val AGENT_DB_PREFIX_PATH = ".wine/drive_c/ProgramData/Battle.net/Agent/product.db"
-
-    /**
-     * Undoes the registrations of earlier test builds that the Agent refused and then wanted to update (see
-     * [gameDrive]): removes the C:\\WoW Forever link (ours only) and, from the Agent's product.db, only wowf entries
-     * at one of [OLD_INSTALL_PATHS], after a backup; every other entry is copied byte for byte.
-     */
-    fun removeOldGameLink(containerRoot: File, gameRoot: File): String {
-        val notes = mutableListOf<String>()
-        // Once: bnet-test-35 registered H:/<folder>, then the Agent marked it non-playable (2123, the chmod the
-        // FUSE shim now allows) and queued an update, in its product.db and in the game's .product.db. Drop that
-        // registration and that file so the game is located afresh; the marker keeps a good later one untouched.
-        val resetMarker = File(containerRoot, H_RESET_MARKER)
-        val dropPaths = if (resetMarker.exists()) OLD_INSTALL_PATHS else OLD_INSTALL_PATHS + gameInstallPath(gameRoot)
-        if (!resetMarker.exists()) {
-            val gameDb = File(gameRoot, ".product.db")
-            if (gameDb.isFile && ProtoField.installPathOf(gameDb.readBytes()) == gameInstallPath(gameRoot)) {
-                gameDb.delete(); notes += "game .product.db reset"
-            }
-        }
-        val link = File(containerRoot, OLD_LINK_PREFIX_PATH).toPath()
-        if (java.nio.file.Files.isSymbolicLink(link)) { java.nio.file.Files.delete(link); notes += "link removed" }
-        val agentDb = File(containerRoot, AGENT_DB_PREFIX_PATH)
-        if (agentDb.isFile) {
-            val bytes = agentDb.readBytes()
-            val kept = java.io.ByteArrayOutputStream()
-            var dropped = 0
-            for (field in ProtoField.parse(bytes)) {
-                if (field.number == 1 && field.isWowfAt(dropPaths)) { dropped++; continue }
-                kept.write(bytes, field.start, field.end - field.start)
-            }
-            if (dropped > 0) {
-                // Keep the first backup: it is the one from before any of these clean-ups.
-                File(agentDb.parentFile, "product.db.foreverywhere-backup").takeUnless { it.exists() }?.writeBytes(bytes)
-                agentDb.writeBytes(kept.toByteArray())
-                notes += "dropped $dropped old wowf entry from the Agent's product.db"
-            }
-        }
-        if (!resetMarker.exists()) resetMarker.writeText("done\n")
-        return notes.joinToString().ifEmpty { "nothing to undo" }
-    }
-
     /** One top-level protobuf field: its number, and where it starts (tag) and ends in the buffer. */
     private class ProtoField(val number: Int, val start: Int, val end: Int, val payload: ByteArray?) {
-        /** A ProductInstall with uid "wowf" (field 1) whose install_path is one of [paths]. */
-        fun isWowfAt(paths: Set<String>): Boolean = runCatching {
-            val install = payload ?: return false
-            val uid = parse(install).firstOrNull { it.number == 1 }?.payload?.toString(Charsets.UTF_8)
-            uid == "wowf" && installPathOf(install) in paths
-        }.getOrDefault(false)
-
         companion object {
             /** settings (field 3) -> install_path (field 1) of a ProductInstall, or null. */
             fun installPathOf(productInstall: ByteArray): String? = runCatching {
@@ -382,13 +334,16 @@ object BattleNet {
      * "<folder>/.product.db" (Agent 9873: 0x4be322 -> 0x482f9d -> 0x475642, "Failed to read db info from ...") and
      * answers 2800 when that list is empty; the Foreverywhere download has no such file. The layout copies a real
      * Battle.net-installed WoW Forever folder's .product.db field for field; version, build key, tags and region come
-     * from this folder's .build.info. An existing file is kept (once registered, the Agent owns it), except one
-     * still pointing at a path of an earlier test build.
+     * from this folder's .build.info. An existing file is kept when it already names this folder (once registered,
+     * the Agent owns it) or can't be read; one that names another place, such as the PC a copied game came from, is
+     * replaced, because the Agent would otherwise look for the game there.
      */
     fun writeProductDb(gameRoot: File): String {
         val db = File(gameRoot, ".product.db")
-        // Earlier test builds wrote a path the Agent refuses (C:/WoW Forever, G:/); those are ours to replace.
-        if (db.exists() && ProtoField.installPathOf(db.readBytes()) !in OLD_INSTALL_PATHS) return "kept"
+        if (db.exists()) {
+            val path = ProtoField.installPathOf(db.readBytes()) ?: return "kept (unreadable)"
+            if (samePath(path, gameInstallPath(gameRoot))) return "kept"
+        }
         val lines = File(gameRoot, ".build.info").readLines().filter { it.isNotBlank() }
         val header = lines.first().split('|').map { it.substringBefore('!') }
         val row = lines.drop(1).map { it.split('|') }.firstOrNull { it.getOrNull(header.indexOf("Active")) == "1" }
@@ -426,6 +381,12 @@ object BattleNet {
         File(gameRoot, "Launcher.db").takeUnless { it.exists() }?.writeText("enUS")
         File(gameRoot, ".patch.result").takeUnless { it.exists() }?.writeText("0")
         return "written (${col("Version")}, $buildKey)"
+    }
+
+    /** Windows paths compare without case, slash direction or a trailing slash. */
+    private fun samePath(a: String, b: String): Boolean {
+        fun norm(p: String) = p.replace('\\', '/').trimEnd('/').lowercase()
+        return norm(a) == norm(b)
     }
 
     /** Minimal protobuf writer: varints and length-delimited fields are all .product.db uses. */

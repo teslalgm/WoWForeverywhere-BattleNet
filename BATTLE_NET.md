@@ -46,9 +46,7 @@ This project is unofficial. Running Blizzard's Windows software on Android is no
    - Select the game folder itself and confirm. It has the name the game folder has on your phone, **WoW Forever** unless you put the game somewhere else.
    - Do not pick `C:` or `G:`. `G:` is the same game folder shown as a whole drive, and Battle.net refuses it (error BLZBNTAGT00000AF0 or a "permissions" error).
 4. Battle.net now shows **Update** instead of Install. Press it and wait until it finishes, including the "Reclaiming space" step. This adds Battle.net's own launcher file to the game folder; it does not download the game again. If Battle.net starts downloading the whole game instead, pause it and close the session: the wrong folder was picked.
-5. In Battle.net's settings:
-   - **App → When I launch a game:** keep the Battle.net window open. Do not choose "Exit Battle.net completely"; on a phone the game starts too slowly for that and then cannot sign in.
-   - **Notifications:** turn them off. A notification popping up can leave the Battle.net window unresponsive.
+5. In Battle.net's settings, turn **Notifications** off. A notification popping up can leave the Battle.net window unresponsive. The app sets the other option it needs by itself: **When I launch a game** is kept at "keep the Battle.net window open". Leave it there; with "Exit Battle.net completely" the game starts too slowly on a phone and then cannot sign in.
 6. Press **Play**.
 
 ## Every start after that
@@ -69,7 +67,7 @@ Each has an entry under [Issues](../../issues):
 - Minimising the app during a Battle.net session gets it closed by Android.
 - The game stutters for the first 15 seconds or so, until Battle.net is closed.
 - Battle.net's news panel may show "Oops! Something went wrong". It is harmless.
-- The two Battle.net settings above have to be set by hand.
+- Battle.net's notifications have to be turned off by hand.
 
 ## If something goes wrong
 
