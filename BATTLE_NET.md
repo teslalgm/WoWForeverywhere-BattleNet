@@ -64,7 +64,7 @@ Each has an entry under [Issues](../../issues):
 - The Battle.net window can stay dark and unresponsive after its Settings window, an error message or a notification closes.
 - The picture sometimes freezes while Battle.net starts or signs in. Close the session and start again.
 - After quitting the game the last frame stays on screen until you tap it.
-- Minimising the app during a Battle.net session gets it closed by Android.
+- Minimising the app while only Battle.net is open, before the game has started, may get it closed by Android. Once the game is running, minimising works.
 - The game stutters for the first 15 seconds or so, until Battle.net is closed.
 - Battle.net's news panel may show "Oops! Something went wrong". It is harmless.
 - Battle.net's notifications have to be turned off by hand.
