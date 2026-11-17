@@ -4916,7 +4916,7 @@ private fun setImagefsContainerVariant(context: Context, container: Container) {
 }
 
 private val battleNetCloseScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
-private const val BATTLE_NET_CLOSE_DELAY_MS = 15_000L
+private const val BATTLE_NET_CLOSE_DELAY_MS = 45_000L
 private const val GAME_LOGIN_DONE = "Battle.net logon completed in glue"
 
 /**
