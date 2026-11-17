@@ -1006,6 +1006,14 @@ internal fun prepareLaunch(
     } else {
         BattleNetSignIn.removeLoginFile(gameRoot)
     }
+    // Once: installs made before the downloader looked at region tags can hold another region's binaries.
+    val regionChecked = File(gameRoot, ".foreverywhere-region-checked")
+    if (arm64Exe.exists() && !regionChecked.exists()) {
+        runCatching {
+            WowClientDownloader.verifyClientBinaries(gameRoot, product, onStatus)
+            regionChecked.writeText("1\n")
+        }.onFailure { Timber.w(it, "Couldn't check the client binaries' region") }
+    }
     if (!arm64Exe.exists()) {
         try {
             WowClientDownloader.download(gameRoot, product, onStatus)

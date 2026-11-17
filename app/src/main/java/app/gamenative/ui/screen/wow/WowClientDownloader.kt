@@ -179,11 +179,14 @@ object WowClientDownloader {
         archives: Lazy<ArchiveLocator?>,
         onStatus: (String) -> Unit,
     ) {
-        val files = InstallManifest.parse(Blte.decode(cdn.require("data", buildConfig.getValue("install")[1]))).filter { it.isClientBinary() }
+        val (entries, tagTypes) = InstallManifest.parseWithTagTypes(Blte.decode(cdn.require("data", buildConfig.getValue("install")[1])))
+        val region = runCatching { GameRegions.effective(activeBuild(File(gameRoot, BUILD_INFO), product)["Branch"]).code }.getOrDefault("us")
+        val files = forRegion(entries.filter { it.isClientBinary() }, tagTypes, region)
         check(files.isNotEmpty()) { "No Windows ARM64 client files in this build" }
 
         val clientDir = File(gameRoot, product.flavorDir)
         val pending = files.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
+        Timber.i("Client binaries for region %s: %d files, %d to replace: %s", region, files.size, pending.size, pending.joinToString { it.name })
         if (pending.isEmpty()) return
 
         onStatus("Looking up client files...")
@@ -240,6 +243,45 @@ object WowClientDownloader {
         val temp = File(gameRoot, "$BUILD_INFO.tmp")
         temp.writeText(info.withUpdatedActive(product, updates).serialize())
         check(temp.renameTo(buildInfo)) { "Could not update $BUILD_INFO" }
+    }
+
+    /**
+     * Drops binaries built for another region. The manifest can list the same path more than once, one entry per
+     * region (the China client is its own binary: its login screen says "China Release arm64" where the others say
+     * "Release"), and with only platform and architecture checked whichever came last was the one left on disk.
+     * An entry with no region tag at all is for every region.
+     */
+    private fun forRegion(entries: List<InstallEntry>, tagTypes: Map<String, Int>, region: String): List<InstallEntry> {
+        val regionTag = tagTypes.keys.firstOrNull { it.equals(region, ignoreCase = true) }
+        val regionTags = regionTag?.let { tag -> tagTypes.filterValues { it == tagTypes[tag] }.keys }.orEmpty()
+        entries.groupBy { it.relativePath.lowercase() }.filterValues { it.size > 1 }.forEach { (path, same) ->
+            Timber.i("Install manifest lists %s %d times: %s", path, same.size, same.joinToString(" | ") { "${it.ckey.take(8)} ${it.tags.sorted()}" })
+        }
+        if (regionTag == null) {
+            Timber.w("Install manifest has no tag for region %s (tags: %s)", region, tagTypes.keys.sorted())
+            return entries
+        }
+        return entries.filter { entry -> entry.tags.none { it in regionTags } || regionTag in entry.tags }
+    }
+
+    /**
+     * Checks the client binaries against the manifest of the installed build and replaces the ones that differ,
+     * without touching .build.info (which Battle.net's Agent may own by now).
+     */
+    fun verifyClientBinaries(gameRoot: File, product: WowProduct, onStatus: (String) -> Unit) {
+        val row = activeBuild(File(gameRoot, BUILD_INFO), product)
+        val cdn = Cdn(hosts = splitHosts(row.getValue("CDN Hosts")), path = row.getValue("CDN Path"))
+        onStatus("Checking the game's program files...")
+        syncClient(
+            gameRoot = gameRoot,
+            product = product,
+            cdn = cdn,
+            buildConfig = TactConfig.parse(String(cdn.require("config", row.getValue("Build Key")))),
+            archives = lazy {
+                ArchiveLocator(cdn, gameRoot, TactConfig.parse(String(cdn.require("config", row.getValue("CDN Key")))).getValue("archives"))
+            },
+            onStatus = onStatus,
+        )
     }
 
     private fun InstallEntry.isClientBinary(): Boolean {
