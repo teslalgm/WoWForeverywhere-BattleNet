@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **This is a fork with an experimental Battle.net mode.** It runs Blizzard's Battle.net desktop app inside the game container, for players whose game cannot sign in on its own (error BLZ51914400). Read **[BATTLE_NET.md](BATTLE_NET.md)** for how to install and use it, and get the test APK from [this fork's Releases](../../releases). Everything below is the README of the original project, [YoruDev-Ryland/WoWForeverywhere](https://github.com/YoruDev-Ryland/WoWForeverywhere).
+
 <div align="center">
 
 # WoW Foreverywhere
