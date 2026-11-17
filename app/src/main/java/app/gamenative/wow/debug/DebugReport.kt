@@ -91,7 +91,15 @@ object DebugReport {
                     installRoot?.listFiles().orEmpty().sortedBy { it.name }
                         .joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.length()} ${it.name}" },
                 )
-                newest(File(game, "Logs"), 8).forEach { putFile("game/Logs/${it.name}", it) }
+                // All of the game's logs: which ones matter depends on the problem (connection, login, region).
+                newest(File(game, "Logs"), 40).forEach { putFile("game/Logs/${it.name}", it, 300_000) }
+                // The game's settings (region, locale, graphics API) and what its folder holds.
+                putFile("game/Config.wtf", File(game, "WTF/Config.wtf"))
+                put(
+                    "game/listing.txt",
+                    game.listFiles().orEmpty().sortedBy { it.name }
+                        .joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.length()} ${it.name}" },
+                )
                 newest(File(game, "Errors"), 5).forEach { putFile("game/Errors/${it.name}", it) }
             }
         }
