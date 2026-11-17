@@ -60,6 +60,9 @@ object DebugReport {
             runCatching { put("exit_reasons.txt", exitReasons(context)) }.onFailure { Timber.w(it, "Report skipped exit_reasons.txt") }
             putFile("app.log", File(DebugLog.dir(context), "app.log"))
             putFile("app.log.1", File(DebugLog.dir(context), "app.log.1"))
+            // CPU and memory use of the last session, sampled every few seconds (SessionProfiler).
+            putFile("session_profile.log", SessionProfiler.file(context))
+            putFile("fps_session.json", File(context.filesDir, "imagefs/tmp/fps_session.json"))
             // Wine traces can be long, and what starts a crash can be megabytes before its end.
             File(external, "wine_logs/wine_debug.log").takeIf { it.isFile }?.let { log ->
                 runCatching { put("wine_debug.log", wineLog(log)) }.onFailure { Timber.w(it, "Report skipped wine_debug.log") }

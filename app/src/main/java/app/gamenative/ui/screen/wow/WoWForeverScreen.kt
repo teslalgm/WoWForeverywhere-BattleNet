@@ -987,6 +987,7 @@ internal fun prepareLaunch(
     onStatus: (String) -> Unit,
 ): String {
     installBundledComponents(context, onStatus)
+    app.gamenative.wow.debug.SessionProfiler.start(context, target.name)
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
     try {
