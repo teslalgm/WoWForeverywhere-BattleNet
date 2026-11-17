@@ -55,6 +55,9 @@ object DebugReport {
 
             put("summary.txt", summaryText(summary))
             put("logcat.txt", logcat())
+            // Why Android says this app's processes ended (low memory, native crash, killed by the system...):
+            // a session that vanishes without a Java crash leaves no other trace (bnet-test-46, game start).
+            runCatching { put("exit_reasons.txt", exitReasons(context)) }.onFailure { Timber.w(it, "Report skipped exit_reasons.txt") }
             putFile("app.log", File(DebugLog.dir(context), "app.log"))
             putFile("app.log.1", File(DebugLog.dir(context), "app.log.1"))
             // Wine traces can be long, and what starts a crash can be megabytes before its end.
@@ -182,6 +185,26 @@ object DebugReport {
             append(head)
             if (cut > 0) append("[... $cut lines left out ...]\n")
             tail.forEach { append(it).append('\n') }
+        }
+    }
+
+    /** Android's record of this app's last process exits, newest first, with a native crash's tombstone text. */
+    private fun exitReasons(context: Context): String {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return "Needs Android 11+\n"
+        val manager = context.getSystemService(android.app.ActivityManager::class.java)
+        val format = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        return buildString {
+            manager.getHistoricalProcessExitReasons(context.packageName, 0, 12).forEach { info ->
+                append("${format.format(java.util.Date(info.timestamp))} pid=${info.pid} process=${info.processName}\n")
+                append("  reason=${info.reason} status=${info.status} importance=${info.importance}")
+                append(" pss=${info.pss / 1024}MB rss=${info.rss / 1024}MB\n")
+                append("  description=${info.description}\n")
+                runCatching { info.traceInputStream?.use { it.readBytes() } }.getOrNull()?.let { trace ->
+                    append("  trace (${trace.size} bytes):\n").append(printable(trace.copyOf(minOf(trace.size, 48_000)))).append('\n')
+                }
+            }
+            append("\nreason: 1 exit_self, 2 signaled, 3 low_memory, 4 crash (Java), 5 crash_native, 6 anr, 9 excessive_resource_usage, ")
+            append("10 user_requested, 11 user_stopped, 12 dependency_died, 13 other\n")
         }
     }
 
