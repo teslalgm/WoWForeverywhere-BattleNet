@@ -88,7 +88,7 @@ public abstract class DesktopHelper {
         long now = android.os.SystemClock.uptimeMillis();
         if (now - lastPressLogMs < 1000) return;
         lastPressLogMs = now;
-        Timber.i("Press at %d,%d: on %s, focus %s", xServer.pointer.getClampedX(), xServer.pointer.getClampedY(), describe(pointWindow), describe(focusedWindow));
+        Timber.i("Press at %d,%d: on %s, focus %s, pointer grab %s", xServer.pointer.getClampedX(), xServer.pointer.getClampedY(), describe(pointWindow), describe(focusedWindow), describe(xServer.grabManager.getWindow()));
     }
 
     private static String describe(Window window) {

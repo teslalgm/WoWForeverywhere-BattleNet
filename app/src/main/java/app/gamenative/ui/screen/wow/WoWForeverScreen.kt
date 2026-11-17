@@ -1113,9 +1113,13 @@ internal fun prepareLaunch(
  * inherits them, and its copy protection raises thousands of handled exceptions on the main thread: with +seh every
  * one was written out (a 150 MB log in eight minutes, bnet-test-50) and the game stuttered. +seh, +mountmgr, +volume
  * and +advapi were only needed to find the start-up crash and the Agent's folder checks.
+ *
+ * Diagnostic build only: +win and +event show what Wine does with a press and with window activation, to find why
+ * Battle.net's main window ignores presses after its settings window closes. They are to come out again: the game
+ * inherits them and they may cost frame rate.
  */
 private fun battleNetWineDebug(context: Context): String =
-    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,+loaddll" else ""
+    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,+loaddll,+win,+event" else ""
 
 private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile, screenSize: String): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
