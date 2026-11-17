@@ -9,6 +9,13 @@
  * "not supported / not permitted" error, report success. Every other fchmod() is passed through unchanged, and
  * real access to the files is still decided by Android.
  *
+ * Ownership: wineserver builds a file's or folder's DACL from its Unix owner and gives access only through the
+ * owner ACE (server/file.c, mode_to_sd: any uid but its own becomes anonymous logon). Files on Android's shared
+ * storage belong to another uid, so Windows programs are denied there: Battle.net's Agent creates the game's Data
+ * folder, then AccessCheck()s it for read/write and fails ("Unable to create TACT container folder", bnet-test-45).
+ * In wineserver only, fstat() of a file on FUSE reports wineserver's own uid. Android still decides who may
+ * actually read or write the files.
+ *
  * Drive H: as FAT32: Battle.net's Agent skips its folder permission check on volumes without
  * FILE_PERSISTENT_ACLS. GetVolumeInformation opens the drive's device (dosdevices/h::, a file named
  * h_drive_fat32.img outside every Wine drive) and, as no drive letter holds it, ntdll falls back to fstatfs() of
@@ -37,6 +44,9 @@
 #define FUSE_SUPER_MAGIC 0x65735546
 
 static int (*real_fchmod)(int, mode_t);
+static int (*real_fstat)(int, struct stat *);
+static int in_wineserver;
+static int uid_notes;
 
 
 static void note(const char *format, ...) __attribute__((format(printf, 1, 2)));
@@ -85,7 +95,11 @@ __attribute__((constructor)) static void announce(void)
     if (n <= 0) return;
     base = strrchr(cmdline, '/');
     base = base ? base + 1 : cmdline;
-    if (strcmp(base, "wineserver") == 0) note("pid %d: loaded in wineserver (uid %d)\n", getpid(), (int)getuid());
+    if (strcmp(base, "wineserver") == 0)
+    {
+        in_wineserver = 1;
+        note("pid %d: loaded in wineserver (uid %d)\n", getpid(), (int)getuid());
+    }
 }
 
 int fchmod(int fd, mode_t mode)
@@ -165,4 +179,41 @@ int fstatfs(int fd, struct statfs *buf)
 int fstatfs64(int fd, struct statfs64 *buf)
 {
     return fstatfs(fd, (struct statfs *)buf);
+}
+
+int fstat(int fd, struct stat *st)
+{
+    struct statfs fs;
+    char path[512];
+    int ret;
+
+    if (!real_fstat) real_fstat = (int (*)(int, struct stat *))dlsym(RTLD_NEXT, "fstat");
+    if (!real_fstat)
+    {
+        errno = ENOSYS;
+        return -1;
+    }
+    ret = real_fstat(fd, st);
+    if (ret != 0 || !in_wineserver || st->st_uid == getuid()) return ret;
+    {
+        int saved_errno = errno;
+        if (fstatfs(fd, &fs) == 0 && (unsigned long)fs.f_type == FUSE_SUPER_MAGIC)
+        {
+            if (uid_notes < 10)
+            {
+                uid_notes++;
+                note("pid %d: %s owned by uid %d on FUSE, shown to Wine as its own (uid %d)\n", getpid(),
+                     fd_path(fd, path, sizeof(path)), (int)st->st_uid, (int)getuid());
+            }
+            st->st_uid = getuid();
+        }
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+/* 64-bit bionic and glibc lay out struct stat64 like struct stat; wineserver may call either name. */
+int fstat64(int fd, struct stat64 *st)
+{
+    return fstat(fd, (struct stat *)st);
 }
