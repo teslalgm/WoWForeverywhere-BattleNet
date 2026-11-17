@@ -72,6 +72,12 @@ object DebugReport {
             // which permission changes Android refused and the shim let through.
             runCatching { com.winlator.container.ContainerManager(context).getContainerById("wow_forever")?.rootDir }
                 .getOrNull()?.let { putFile("wine/fuse_chmod.log", File(it, ".wine/fuse_chmod.log")) }
+            // Which launch options Battle.net left in the registry for the game's launcher login: key and value
+            // names with the size of each value only, never the values (they hold the account and its login token).
+            runCatching { com.winlator.container.ContainerManager(context).getContainerById("wow_forever")?.rootDir }
+                .getOrNull()?.let { File(it, ".wine/user.reg") }?.takeIf { it.isFile }?.let { reg ->
+                    runCatching { put("wine/launch_options.txt", launchOptions(reg)) }
+                }
             // The Agent's install database (protobuf): which region each install, Battle.net's own included, is on.
             battleNetProductDb(context)?.let { db ->
                 runCatching { put("battle.net/product.db.txt", printable(db.readBytes())) }
@@ -194,6 +200,24 @@ object DebugReport {
             if (cut > 0) append("[... $cut lines left out ...]\n")
             tail.forEach { append(it).append('\n') }
         }
+    }
+
+    private fun launchOptions(userReg: File): String = buildString {
+        var inside = false
+        userReg.bufferedReader(Charsets.ISO_8859_1).useLines { lines ->
+            lines.forEach { line ->
+                if (line.startsWith("[")) {
+                    inside = line.contains("Blizzard Entertainment", ignoreCase = true)
+                    if (inside) append(line.substringBefore(']')).append("]\n")
+                } else if (inside && (line.startsWith("\"") || line.startsWith("@"))) {
+                    val name = line.substringBefore("=")
+                    val value = line.substringAfter("=", "")
+                    append("  ").append(name).append(" = <").append(value.substringBefore(':').take(8).filter { it.isLetter() }.ifEmpty { "str" })
+                    append(", ").append(value.length).append(" chars>\n")
+                }
+            }
+        }
+        if (isEmpty()) append("No Blizzard Entertainment keys in user.reg\n")
     }
 
     /** Android's record of this app's last process exits, newest first, with a native crash's tombstone text. */
