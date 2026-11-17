@@ -4917,22 +4917,35 @@ private fun setImagefsContainerVariant(context: Context, container: Container) {
 
 private val battleNetCloseScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 private const val BATTLE_NET_CLOSE_DELAY_MS = 45_000L
+private const val GAME_LOGIN_DONE = "Battle.net logon completed in glue"
 
 /**
- * Closes Battle.net 45 s after the game it started shows its window. Battle.net has to be running when the game
- * logs in (with its own "Exit Battle.net completely" the game sat at the login screen, bnet-test-49), and the login
- * is over within seconds of the window appearing. After that its browser processes only cost: in bnet-test-52 they
- * took 60-100% of a core and pushed about 8 GB into swap, the game's own memory included, and the game ran at
- * 32 fps with long stalls. The Agent stays; the game talks to it when it exits.
+ * Closes Battle.net once the game it started has logged in. Battle.net has to be running when the game logs in
+ * (with its own "Exit Battle.net completely" the game sat at the login screen, bnet-test-49). After that its browser
+ * processes only cost: in bnet-test-52 they took 60-100% of a core and pushed about 8 GB into swap, the game's own
+ * memory included, and the game averaged 32 fps with long stalls; closed, it averaged 63 fps (bnet-test-53).
+ * The game notes the end of its login in Logs/Connection.log (3.6 s after its window appeared in bnet-test-53);
+ * if that line doesn't show up, for instance because the log isn't written until the game exits, Battle.net is
+ * closed 45 s after the window appeared, as before. The Agent stays; the game talks to it when it exits.
  */
 private fun closeBattleNetOnceGameIsIn(window: Window, container: Container, winHandler: com.winlator.winhandler.WinHandler?) {
     if (container.executablePath != app.gamenative.ui.screen.wow.BattleNet.LAUNCHER_WINDOWS_PATH || winHandler == null) return
     if (!window.className.equals(app.gamenative.ui.screen.wow.BattleNet.GAME_EXECUTABLE, ignoreCase = true)) return
     if (!battleNetCloseScheduled.compareAndSet(false, true)) return
+    val gameRoot = Container.drivesIterator(container.drives).firstOrNull { it[0].equals("G", ignoreCase = true) }?.get(1)
+    val connectionLog = gameRoot?.let { File(it, "_forever_/Logs/Connection.log") }
+    val shownAt = java.time.LocalTime.now()
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            delay(BATTLE_NET_CLOSE_DELAY_MS)
-            Timber.i("Closing Battle.net: the game has had %d s to log in", BATTLE_NET_CLOSE_DELAY_MS / 1000)
+            val deadline = System.currentTimeMillis() + BATTLE_NET_CLOSE_DELAY_MS
+            var loggedIn = false
+            while (!loggedIn && System.currentTimeMillis() < deadline) {
+                delay(1_000)
+                loggedIn = connectionLog != null && gameLoggedInSince(connectionLog, shownAt)
+            }
+            // A moment for the game to finish with the launcher after the line is written.
+            if (loggedIn) delay(3_000)
+            Timber.i("Closing Battle.net: %s", if (loggedIn) "the game has logged in" else "the game has had ${BATTLE_NET_CLOSE_DELAY_MS / 1000} s to log in")
             // Its browser helpers carry the same name; ask a few times so they all go.
             repeat(4) {
                 winHandler.killProcess("Battle.net.exe")
@@ -4943,3 +4956,16 @@ private fun closeBattleNetOnceGameIsIn(window: Window, container: Container, win
         }
     }
 }
+
+/** True when [log] has the login-finished line with a time of day not before [since] (less a few seconds), so a line left from an earlier session doesn't count. */
+private fun gameLoggedInSince(log: File, since: java.time.LocalTime): Boolean = runCatching {
+    if (!log.isFile) return false
+    log.useLines { lines ->
+        lines.any { line ->
+            if (!line.contains(GAME_LOGIN_DONE)) return@any false
+            // "11/17 11:41:14.159  [N][Connection] ..."
+            val time = line.substringAfter(' ', "").trim().take(8)
+            runCatching { !java.time.LocalTime.parse(time).isBefore(since.minusSeconds(10)) }.getOrDefault(false)
+        }
+    }
+}.getOrDefault(false)
