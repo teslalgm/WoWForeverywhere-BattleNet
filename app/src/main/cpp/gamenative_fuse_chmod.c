@@ -9,6 +9,13 @@
  * "not supported / not permitted" error, report success. Every other fchmod() is passed through unchanged, and
  * real access to the files is still decided by Android.
  *
+ * Ownership: wineserver builds a file's or folder's DACL from its Unix owner, and only the owner gets WRITE_DAC
+ * (server/file.c, mode_to_sd: security_unix_uid_to_sid gives anonymous logon to any uid but its own). Files on
+ * Android's shared storage are owned by another uid, so no Windows program may change their permissions at all: the
+ * Agent's SetNamedSecurityInfo is denied before any chmod (bnet-test-39: shim loaded, no chmod ever tried, still
+ * 2123). In wineserver only, fstat() of a file on FUSE reports wineserver's own uid. Nothing else changes: Android
+ * still decides who may read or write the files.
+ *
  * Each fchmod that fails, and each one let through, is noted in $WINEPREFIX/fuse_chmod.log (plus one line when
  * wineserver starts with the shim), so a debug report shows whether it was needed at all.
  *
@@ -31,6 +38,9 @@
 #define FUSE_SUPER_MAGIC 0x65735546
 
 static int (*real_fchmod)(int, mode_t);
+static int (*real_fstat)(int, struct stat *);
+static int in_wineserver;
+static int uid_notes;
 
 static void note(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
@@ -78,7 +88,11 @@ __attribute__((constructor)) static void announce(void)
     if (n <= 0) return;
     base = strrchr(cmdline, '/');
     base = base ? base + 1 : cmdline;
-    if (strcmp(base, "wineserver") == 0) note("pid %d: loaded in wineserver\n", getpid());
+    if (strcmp(base, "wineserver") == 0)
+    {
+        in_wineserver = 1;
+        note("pid %d: loaded in wineserver (uid %d)\n", getpid(), (int)getuid());
+    }
 }
 
 int fchmod(int fd, mode_t mode)
@@ -108,4 +122,41 @@ int fchmod(int fd, mode_t mode)
          (unsigned)mode, strerror(saved_errno), fstatfs(fd, &fs) == 0 ? (unsigned long)fs.f_type : 0UL);
     errno = saved_errno;
     return -1;
+}
+
+int fstat(int fd, struct stat *st)
+{
+    struct statfs fs;
+    char path[512];
+    int ret;
+
+    if (!real_fstat) real_fstat = (int (*)(int, struct stat *))dlsym(RTLD_NEXT, "fstat");
+    if (!real_fstat)
+    {
+        errno = ENOSYS;
+        return -1;
+    }
+    ret = real_fstat(fd, st);
+    if (ret != 0 || !in_wineserver || st->st_uid == getuid()) return ret;
+    {
+        int saved_errno = errno;
+        if (fstatfs(fd, &fs) == 0 && (unsigned long)fs.f_type == FUSE_SUPER_MAGIC)
+        {
+            if (uid_notes < 20)
+            {
+                uid_notes++;
+                note("pid %d: %s owned by uid %d on FUSE, shown to Wine as its own (uid %d)\n", getpid(),
+                     fd_path(fd, path, sizeof(path)), (int)st->st_uid, (int)getuid());
+            }
+            st->st_uid = getuid();
+        }
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+/* 64-bit bionic and glibc lay out struct stat64 like struct stat; wineserver may call either name. */
+int fstat64(int fd, struct stat64 *st)
+{
+    return fstat(fd, (struct stat *)st);
 }

@@ -237,7 +237,7 @@ object BattleNet {
     /** Where earlier test builds had Battle.net register the game; the Agent refused both. */
     private val OLD_INSTALL_PATHS = setOf("C:/WoW Forever", "G:/", "G:")
     // Bumped when a test build changes how the Agent judges the folder, so its refused H: registration is redone.
-    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset-2"
+    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset-3"
     private const val OLD_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
     private const val AGENT_DB_PREFIX_PATH = ".wine/drive_c/ProgramData/Battle.net/Agent/product.db"
 
