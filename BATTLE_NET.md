@@ -7,6 +7,21 @@ It is meant for players whose game cannot sign in on its own, typically with err
 > [!WARNING]
 > This is a test build. It works on the one phone it was developed on and has rough edges, listed under [Known problems](#known-problems). It is unofficial and not affiliated with or endorsed by Blizzard Entertainment. You need your own Battle.net account with access to WoW Forever.
 
+## Status
+
+This has not been sent as a pull request to the projects this fork comes from yet, because it is not stable enough. More stability fixes are planned over the coming days. Until then, anyone who wants to is welcome to use this fork.
+
+## Nothing of Blizzard's is modified
+
+- **Battle.net is Blizzard's official installer**, downloaded by you from Blizzard and installed unchanged.
+- **The game is the official WoW Forever release**, downloaded from Blizzard's servers. Its files match Blizzard's own file list.
+- **No Blizzard program or game file is patched, replaced or altered**: no `.exe`, no `.dll`, no game data.
+- **No login check is bypassed.** You sign in to your own account in Battle.net, and Battle.net starts the game, as on a PC.
+
+What the app does change is on its own side: how Wine presents the phone's storage to Windows programs, two of Battle.net's own settings (hardware acceleration off, login region), and the small bookkeeping files Battle.net itself writes into a game folder when it registers a game (`.product.db`, `Launcher.db`, `.patch.result`).
+
+This project is unofficial. Running Blizzard's Windows software on Android is not something Blizzard supports.
+
 ## What you need
 
 | | |
