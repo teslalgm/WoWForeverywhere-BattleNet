@@ -24,6 +24,8 @@ object DebugReport {
     private const val MAX_FILE_BYTES = 1_000_000L
     private const val MAX_WINE_LOG_BYTES = 8_000_000L
     private const val WINE_LOG_HEAD_CHARS = 300_000
+    private const val WINE_KEEP_CHARS = 1_500_000
+    private val WINE_KEEP = listOf(":mountmgr:", ":volume:", ":advapi:")
     private const val MAX_LOGCAT_CHARS = 3_000_000
     private val EMAIL = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""")
     private val TEXT_FILES = setOf("txt", "log")
@@ -160,9 +162,12 @@ object DebugReport {
         var lines = 0L
         var noise = 0L
         var cut = 0L
+        // Drive and permission traces (Battle.net's Agent) are kept whole, wherever they fall in the log.
+        val kept = StringBuilder()
         file.bufferedReader().useLines { all ->
             all.forEach { line ->
                 lines++
+                if (WINE_KEEP.any { line.contains(it) } && kept.length < WINE_KEEP_CHARS) kept.append(line).append('\n')
                 if (WINE_LOOP_NOISE.any { line.contains(it) }) { noise++; return@forEach }
                 if (head.length < WINE_LOG_HEAD_CHARS) { head.append(line).append('\n'); return@forEach }
                 tail.addLast(line)
@@ -173,6 +178,7 @@ object DebugReport {
         return buildString {
             append("[wine_debug.log: ${file.length()} bytes, $lines lines; $noise repeated unwind/handler lines left out")
             append(if (cut > 0) "; $cut lines between the head and the tail left out]\n" else "]\n")
+            if (kept.isNotEmpty()) append("[drive and permission traces, kept whole]\n").append(kept).append("[end of kept traces]\n")
             append(head)
             if (cut > 0) append("[... $cut lines left out ...]\n")
             tail.forEach { append(it).append('\n') }
