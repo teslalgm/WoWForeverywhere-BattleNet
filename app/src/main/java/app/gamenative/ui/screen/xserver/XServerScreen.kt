@@ -2067,6 +2067,7 @@ fun XServerScreen(
                             )
                             refreshFrameRatingTracking("map-window")
                             win32AppWorkarounds?.applyWindowWorkarounds(window)
+                            closeBattleNetOnceGameIsIn(window, container, xServerView?.getxServer()?.winHandler)
                             val targetExecutable = extractExecutableBasename(container.executablePath)
                             val isGameWindow = (targetExecutable.isNotBlank() && windowMatchesExecutable(window, targetExecutable)) ||
                                     (window.isApplicationWindow() && !window.name.equals("shell", ignoreCase = true) && !window.className.contains("explorer", ignoreCase = true))
@@ -4912,4 +4913,33 @@ private fun setImagefsContainerVariant(context: Context, container: Container) {
     val imageFs = ImageFs.find(context)
     val containerVariant = container.containerVariant
     imageFs.createVariantFile(containerVariant)
+}
+
+private val battleNetCloseScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+private const val BATTLE_NET_CLOSE_DELAY_MS = 45_000L
+
+/**
+ * Closes Battle.net 45 s after the game it started shows its window. Battle.net has to be running when the game
+ * logs in (with its own "Exit Battle.net completely" the game sat at the login screen, bnet-test-49), and the login
+ * is over within seconds of the window appearing. After that its browser processes only cost: in bnet-test-52 they
+ * took 60-100% of a core and pushed about 8 GB into swap, the game's own memory included, and the game ran at
+ * 32 fps with long stalls. The Agent stays; the game talks to it when it exits.
+ */
+private fun closeBattleNetOnceGameIsIn(window: Window, container: Container, winHandler: com.winlator.winhandler.WinHandler?) {
+    if (container.executablePath != app.gamenative.ui.screen.wow.BattleNet.LAUNCHER_WINDOWS_PATH || winHandler == null) return
+    if (!window.className.equals(app.gamenative.ui.screen.wow.BattleNet.GAME_EXECUTABLE, ignoreCase = true)) return
+    if (!battleNetCloseScheduled.compareAndSet(false, true)) return
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            delay(BATTLE_NET_CLOSE_DELAY_MS)
+            Timber.i("Closing Battle.net: the game has had %d s to log in", BATTLE_NET_CLOSE_DELAY_MS / 1000)
+            // Its browser helpers carry the same name; ask a few times so they all go.
+            repeat(4) {
+                winHandler.killProcess("Battle.net.exe")
+                delay(1_500)
+            }
+        } finally {
+            battleNetCloseScheduled.set(false)
+        }
+    }
 }
