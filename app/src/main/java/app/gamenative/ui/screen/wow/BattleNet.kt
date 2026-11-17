@@ -232,12 +232,60 @@ object BattleNet {
      * G: (a drive root linked to shared storage, bnet-test-34) both failed. G: stays as it is for the game itself.
      */
     fun gameDrive(gameRoot: File): String = "H:${gameRoot.absoluteFile.parent}"
+
+    private const val H_DEVICE_IMAGE_PREFIX_PATH = ".wine/h_drive_fat32.img"
+    private const val H_DEVICE_LINK_PREFIX_PATH = ".wine/dosdevices/h::"
+
+    /**
+     * Makes Wine report drive H: as FAT32. The Agent reads GetVolumeInformation's flags for the install folder and,
+     * when FILE_PERSISTENT_ACLS is missing (a FAT/exFAT drive on Windows), skips its permission check altogether
+     * ("Skipping '...' since path doesn't support preserving permissions"; Agent 9873: 0x4b7b9d, 0x4c0bac). Wine's
+     * permissions can't satisfy that check on any drive (2123 on H: in bnet-test-35..40), and Android's shared
+     * storage keeps no Windows permissions anyway. Wine's mount manager takes a drive's file system from the boot
+     * sector of its "device" (dosdevices/h::, dlls/mountmgr.sys/device.c: VOLUME_ReadFATSuperblock), so h:: points
+     * at a 2 KiB file holding just a FAT32 boot sector; the drive's files stay where they are.
+     */
+    fun markGameDriveFat32(containerRoot: File): String {
+        val image = File(containerRoot, H_DEVICE_IMAGE_PREFIX_PATH)
+        val bytes = ByteArray(2048).also { b ->
+            fun word(off: Int, v: Int) { b[off] = v.toByte(); b[off + 1] = (v shr 8).toByte() }
+            fun long(off: Int, v: Long) { for (i in 0..3) b[off + i] = (v shr (8 * i)).toByte() }
+            b[0] = 0xEB.toByte(); b[1] = 0x58; b[2] = 0x90.toByte()
+            "MSDOS5.0".toByteArray().copyInto(b, 3)
+            word(0x0B, 512)          // bytes per sector
+            b[0x0D] = 64             // sectors per cluster (32 KiB clusters)
+            word(0x0E, 32)           // reserved sectors
+            b[0x10] = 2              // FATs
+            b[0x15] = 0xF8.toByte()  // media: fixed disk
+            long(0x20, 0x40000000L)  // total sectors (512 GiB)
+            long(0x24, 0x10000L)     // sectors per FAT
+            long(0x2C, 2)            // root directory cluster
+            b[0x40] = 0x80.toByte()  // drive number
+            b[0x42] = 0x29           // extended boot signature
+            long(0x43, 0x57465245L)  // volume serial
+            "WOW FOREVER".toByteArray().copyInto(b, 0x47)
+            "FAT32   ".toByteArray().copyInto(b, 0x52)
+            b[0x1FE] = 0x55; b[0x1FF] = 0xAA.toByte()
+        }
+        val notes = mutableListOf<String>()
+        if (!image.isFile || !image.readBytes().contentEquals(bytes)) { image.writeBytes(bytes); notes += "image written" }
+        val link = File(containerRoot, H_DEVICE_LINK_PREFIX_PATH).toPath()
+        val target = image.absoluteFile.toPath()
+        if (java.nio.file.Files.isSymbolicLink(link) && java.nio.file.Files.readSymbolicLink(link) == target) {
+            notes += "h:: already set"
+        } else {
+            java.nio.file.Files.deleteIfExists(link)
+            java.nio.file.Files.createSymbolicLink(link, target)
+            notes += "h:: linked"
+        }
+        return notes.joinToString()
+    }
     fun gameInstallPath(gameRoot: File): String = "H:/${gameRoot.absoluteFile.name}"
 
     /** Where earlier test builds had Battle.net register the game; the Agent refused both. */
     private val OLD_INSTALL_PATHS = setOf("C:/WoW Forever", "G:/", "G:")
     // Bumped when a test build changes how the Agent judges the folder, so its refused H: registration is redone.
-    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset-3"
+    private const val H_RESET_MARKER = ".wine/drive_c/ProgramData/Battle.net/Agent/.foreverywhere-h-reset-4"
     private const val OLD_LINK_PREFIX_PATH = ".wine/drive_c/WoW Forever"
     private const val AGENT_DB_PREFIX_PATH = ".wine/drive_c/ProgramData/Battle.net/Agent/product.db"
 
