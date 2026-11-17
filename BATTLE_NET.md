@@ -52,7 +52,7 @@ This project is unofficial. Running Blizzard's Windows software on Android is no
 
 1. Press **Battle.net (beta)** and wait for Battle.net to sign in.
 2. Press **Play** and wait. On a phone the game takes about two minutes to appear, and nothing seems to happen meanwhile.
-3. The game signs in by itself and shows your characters. The app closes Battle.net on its own about 45 seconds after the game appears, which frees memory; the game runs smoothly from then on.
+3. The game signs in by itself and shows your characters. The app closes Battle.net on its own about 15 seconds after the game appears, which frees memory; the game runs smoothly from then on.
 
 When you quit the game, the screen may keep showing the last picture. Tap the screen once and Battle.net (or the app) comes back.
 
@@ -64,7 +64,7 @@ Each has an entry under [Issues](../../issues):
 - The picture sometimes freezes while Battle.net starts or signs in. Close the session and start again.
 - After quitting the game the last frame stays on screen until you tap it.
 - Minimising the app during a Battle.net session gets it closed by Android.
-- The game stutters for the first 45 seconds, until Battle.net is closed.
+- The game stutters for the first 15 seconds or so, until Battle.net is closed.
 - Battle.net's news panel may show "Oops! Something went wrong". It is harmless.
 - The two Battle.net settings above have to be set by hand.
 
