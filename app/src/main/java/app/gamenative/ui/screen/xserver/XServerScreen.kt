@@ -4916,7 +4916,7 @@ private fun setImagefsContainerVariant(context: Context, container: Container) {
 }
 
 private val battleNetCloseScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
-private const val BATTLE_NET_CLOSE_DELAY_MS = 45_000L
+private const val BATTLE_NET_CLOSE_DELAY_MS = 15_000L
 private const val GAME_LOGIN_DONE = "Battle.net logon completed in glue"
 
 /**
@@ -4945,6 +4945,7 @@ private fun closeBattleNetOnceGameIsIn(window: Window, container: Container, win
             }
             // A moment for the game to finish with the launcher after the line is written.
             if (loggedIn) delay(3_000)
+            if (!loggedIn) Timber.i("Login line not seen: log=%s exists=%s bytes=%d modified=%d s ago", connectionLog, connectionLog?.isFile, connectionLog?.length() ?: -1, connectionLog?.let { (System.currentTimeMillis() - it.lastModified()) / 1000 } ?: -1)
             Timber.i("Closing Battle.net: %s", if (loggedIn) "the game has logged in" else "the game has had ${BATTLE_NET_CLOSE_DELAY_MS / 1000} s to log in")
             // Its browser helpers carry the same name; ask a few times so they all go.
             repeat(4) {
