@@ -1109,13 +1109,13 @@ internal fun prepareLaunch(
 }
 
 /**
- * Battle.net's main thread overflowed its 64-bit stack in wow64's call_user_exception_dispatcher: a 32-bit exception
- * keeps being raised while the previous one is handled, because the 32-bit stack is used up (fourth test). No window
- * messages were involved (+msg, fifth test), so trace exceptions again (+seh); the report now keeps enough of the
- * log to show the 32-bit exceptions that start it.
+ * Wine debug channels for a Battle.net session, the same as for a normal game start. The game Battle.net starts
+ * inherits them, and its copy protection raises thousands of handled exceptions on the main thread: with +seh every
+ * one was written out (a 150 MB log in eight minutes, bnet-test-50) and the game stuttered. +seh, +mountmgr, +volume
+ * and +advapi were only needed to find the start-up crash and the Agent's folder checks.
  */
 private fun battleNetWineDebug(context: Context): String =
-    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,fixme+all,+loaddll,+seh,+mountmgr,+volume,+advapi" else ""
+    if (app.gamenative.wow.debug.DebugLog.isEnabled(context)) " WINEDEBUG=-all,err+all,+loaddll" else ""
 
 private fun containerConfig(gameRoot: File, product: WowProduct, gpu: GpuProfile, screenSize: String): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
