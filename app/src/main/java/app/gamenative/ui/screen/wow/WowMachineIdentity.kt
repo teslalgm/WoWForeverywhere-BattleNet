@@ -13,8 +13,9 @@ import timber.log.Timber
  * so every player looked like the same PC, and the computer name was the phone's IP address, which changes with every
  * network. Battle.net's fraud checks reject logins like that with BLZ51914400 (#57).
  *
- * Generated once per install and kept in app storage, so it stays the same across launches and app updates. The
- * ProductId is left as is: it's also baked into DigitalProductId, and OEM installs share it anyway.
+ * Generated once per profile and kept in app storage, so it stays the same across launches and app updates. The
+ * default profile keeps the file an install had before profiles existed, and with it the identity Battle.net already
+ * knows. The ProductId is left as is: it's also baked into DigitalProductId, and OEM installs share it anyway.
  */
 internal data class WowMachineIdentity(
     val machineGuid: String,
@@ -56,7 +57,7 @@ internal data class WowMachineIdentity(
         /** The env var the DNS shim reads the computer name from. */
         const val HOSTNAME_ENV = "GAMENATIVE_HOSTNAME"
 
-        private const val FILE_NAME = "wow_identity.properties"
+        private const val FILE_BASE = "wow_identity"
         private val CURRENT_VERSION_KEYS = listOf(
             "Software\\Microsoft\\Windows NT\\CurrentVersion",
             "Software\\Wow6432Node\\Microsoft\\Windows NT\\CurrentVersion",
@@ -70,13 +71,24 @@ internal data class WowMachineIdentity(
         private const val INSTALL_DATE_UNTIL = 1_748_736_000
 
         // Also keeps the env var and the registry in agreement within a run if the identity can't be saved.
-        private var cached: WowMachineIdentity? = null
+        private val cached = HashMap<String, WowMachineIdentity>()
 
         @Synchronized
-        fun load(context: Context): WowMachineIdentity = cached ?: read(context).also { cached = it }
+        fun load(context: Context, profile: WowProfile = WowProfile.DEFAULT): WowMachineIdentity =
+            cached.getOrPut(profile.id) { read(file(context, profile)) }
 
-        private fun read(context: Context): WowMachineIdentity {
-            val file = File(context.filesDir, FILE_NAME)
+        /** Drops a removed profile's identity. Profile ids aren't reused, so nothing can pick it up again. */
+        @Synchronized
+        fun forget(context: Context, profile: WowProfile) {
+            require(!profile.isDefault) { "The default profile keeps its identity" }
+            cached.remove(profile.id)
+            file(context, profile).delete()
+        }
+
+        internal fun file(context: Context, profile: WowProfile) =
+            File(context.filesDir, "$FILE_BASE${profile.storageSuffix}.properties")
+
+        private fun read(file: File): WowMachineIdentity {
             val props = Properties()
             runCatching { file.inputStream().use(props::load) }
             fromProperties(props)?.let { return it }

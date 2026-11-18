@@ -2,6 +2,7 @@ package app.gamenative.ui.screen.wow
 
 import android.content.Context
 import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
+import app.gamenative.ui.screen.wow.auth.BrowserSession
 import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
@@ -75,6 +77,7 @@ import kotlin.math.sqrt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -88,7 +91,6 @@ object WoWLauncherState {
     var shouldAutoLaunch = true
 }
 
-private const val CONTAINER_ID = "wow_forever"
 private const val READY_STATUS = "Ready to launch"
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -104,8 +106,12 @@ fun WoWForeverScreen(
     var files by remember { mutableStateOf(GamePath.Status()) }
     var isLaunching by remember { mutableStateOf(false) }
     var launchJob by remember { mutableStateOf<Job?>(null) }
-    var hasSavedLogin by remember { mutableStateOf(BattleNetSignIn.load(context) != null) }
-    var browserLogin by remember { mutableStateOf(BattleNetBrowserLogin.enabled(context)) }
+    var profiles by remember { mutableStateOf(WowProfiles.all(context)) }
+    var profile by remember { mutableStateOf(WowProfiles.active(context)) }
+    var profileDialog by remember { mutableStateOf<ProfileDialog?>(null) }
+    var isDeletingProfile by remember { mutableStateOf(false) }
+    var hasSavedLogin by remember { mutableStateOf(BattleNetSignIn.load(context, profile) != null) }
+    var browserLogin by remember { mutableStateOf(BattleNetBrowserLogin.enabled(context, profile)) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
     var showLoginDialog by remember { mutableStateOf(false) }
@@ -207,8 +213,63 @@ fun WoWForeverScreen(
         statusText = READY_STATUS
     }
 
+    fun selectProfile(selected: WowProfile) {
+        if (isLaunching || isUpdating) return
+        WowProfiles.select(context, selected)
+        profiles = WowProfiles.all(context)
+        profile = selected
+        hasSavedLogin = BattleNetSignIn.load(context, selected) != null
+        browserLogin = BattleNetBrowserLogin.enabled(context, selected)
+        errorMessage = null
+    }
+
+    fun addProfile(name: String) {
+        // A new profile starts with the login method of the one it was added from, and no saved login.
+        val useBrowserLogin = browserLogin
+        val added = WowProfiles.add(context, name)
+        if (added == null) {
+            errorMessage = "Couldn't add the profile. Pick a name that isn't in use (up to ${WowProfiles.MAX_PROFILES} profiles)."
+            return
+        }
+        BattleNetBrowserLogin.setEnabled(context, useBrowserLogin, added)
+        selectProfile(added)
+    }
+
+    fun renameProfile(target: WowProfile, name: String) {
+        val renamed = WowProfiles.rename(context, target, name)
+        if (renamed == null) {
+            errorMessage = "Couldn't rename the profile. Pick a name that isn't in use."
+            return
+        }
+        profiles = WowProfiles.all(context)
+        if (profile.id == renamed.id) profile = renamed
+    }
+
+    fun deleteProfile(target: WowProfile) {
+        if (target.isDefault || isLaunching || isUpdating || isDeletingProfile) return
+        isDeletingProfile = true
+        // Off the list first, so the profile can't be started while its files are going.
+        WowProfiles.remove(context, target)
+        selectProfile(WowProfiles.active(context))
+        BrowserSession.delete(context, target)
+        scope.launch {
+            try {
+                // Not cancellable: leaving the launcher mid-way would strand a half-deleted container.
+                withContext(Dispatchers.IO + NonCancellable) { WowProfiles.deleteData(context, target) }
+                SnackbarManager.show("Deleted profile ${target.name}")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Error deleting profile ${target.id}")
+                errorMessage = "Couldn't fully delete the profile: ${e.message}"
+            } finally {
+                isDeletingProfile = false
+            }
+        }
+    }
+
     fun launchGame() {
-        if (isLaunching || files.isWrongGame) return
+        if (isLaunching || isDeletingProfile || files.isWrongGame) return
         if (!files.hasStorageAccess) {
             showStoragePermissionDialog = true
             return
@@ -217,11 +278,13 @@ fun WoWForeverScreen(
         errorMessage = null
         statusText = "Preparing components..."
 
+        // Fixed for this launch: the selection can't change while it runs, and this doesn't rely on that.
+        val launching = profile
         launchJob = scope.launch {
             try {
                 val screenSize = fitScreenSizeToWindow(context, resolution.size)
                 val containerId = withContext(Dispatchers.IO) {
-                    prepareLaunch(context, File(gamePath), gpu, screenSize) { msg ->
+                    prepareLaunch(context, File(gamePath), gpu, screenSize, launching) { msg ->
                         scope.launch(Dispatchers.Main) { statusText = msg }
                     }
                 }
@@ -317,7 +380,7 @@ fun WoWForeverScreen(
         }
     }
 
-    val canPlay = !isLaunching && !isUpdating && !files.needsInstall && !files.isWrongGame
+    val canPlay = !isLaunching && !isUpdating && !isDeletingProfile && !files.needsInstall && !files.isWrongGame
 
     val view = LocalView.current
     DisposableEffect(isUpdating) {
@@ -384,7 +447,8 @@ fun WoWForeverScreen(
         }
         Timber.i("WoWForeverScreen LaunchedEffect: gamePath=$gamePath, ready=$ready, hasSavedLogin=$hasSavedLogin, shouldAutoLaunch=${WoWLauncherState.shouldAutoLaunch}")
         when {
-            !ready || !hasSavedLogin -> {
+            // With several profiles the player picks one, so the app doesn't boot straight into the last one used.
+            !ready || !hasSavedLogin || profiles.size > 1 -> {
                 WoWLauncherState.shouldAutoLaunch = false
                 PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
                 if (files.isLegacyBeta) showUpgradeDialog = true
@@ -515,6 +579,13 @@ fun WoWForeverScreen(
                             resolution = it
                         }
                     }
+                    ProfileMenu(
+                        profiles = profiles,
+                        selected = profile,
+                        enabled = !isLaunching && !isUpdating && !isDeletingProfile,
+                        onSelect = ::selectProfile,
+                        onDialog = { profileDialog = it },
+                    )
 
                     longUptimeDays()?.let { days ->
                         Spacer(modifier = Modifier.height(10.dp))
@@ -720,11 +791,11 @@ fun WoWForeverScreen(
                             icon = Icons.Default.Key,
                         ) {
                             browserLogin = !browserLogin
-                            BattleNetBrowserLogin.setEnabled(context, browserLogin)
+                            BattleNetBrowserLogin.setEnabled(context, browserLogin, profile)
                         }
                         if (hasSavedLogin) {
                             LinkButton("Forget Login", Icons.Default.Delete) {
-                                BattleNetSignIn.forget(context)
+                                BattleNetSignIn.forget(context, profile)
                                 BattleNetSignIn.removeLoginFile(File(gamePath))
                                 hasSavedLogin = false
                             }
@@ -752,9 +823,19 @@ fun WoWForeverScreen(
             onDismiss = { showLoginDialog = false },
             onConfirm = { login ->
                 showLoginDialog = false
-                BattleNetSignIn.save(context, login)
+                BattleNetSignIn.save(context, login, profile)
                 hasSavedLogin = true
             },
+        )
+    }
+
+    profileDialog?.let { dialog ->
+        ProfileDialogHost(
+            dialog = dialog,
+            onDismiss = { profileDialog = null },
+            onAdd = ::addProfile,
+            onRename = ::renameProfile,
+            onDelete = ::deleteProfile,
         )
     }
 
@@ -1175,6 +1256,129 @@ private fun <T> OptionMenu(
     }
 }
 
+private sealed interface ProfileDialog {
+    data object Add : ProfileDialog
+    data class Rename(val profile: WowProfile) : ProfileDialog
+    data class Delete(val profile: WowProfile) : ProfileDialog
+}
+
+@Composable
+private fun ProfileMenu(
+    profiles: List<WowProfile>,
+    selected: WowProfile,
+    enabled: Boolean,
+    onSelect: (WowProfile) -> Unit,
+    onDialog: (ProfileDialog) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        LinkButton("Profile: ${selected.name}", Icons.Default.Person, enabled) { expanded = true }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            profiles.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.name) },
+                    trailingIcon = { if (option.id == selected.id) Icon(Icons.Default.Check, contentDescription = null, tint = WowGold) },
+                    onClick = {
+                        expanded = false
+                        if (option.id != selected.id) onSelect(option)
+                    },
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Add profile…") },
+                enabled = profiles.size < WowProfiles.MAX_PROFILES,
+                onClick = {
+                    expanded = false
+                    onDialog(ProfileDialog.Add)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Rename ${selected.name}…") },
+                onClick = {
+                    expanded = false
+                    onDialog(ProfileDialog.Rename(selected))
+                },
+            )
+            // The default profile is the install itself, so it can be renamed but not deleted.
+            if (!selected.isDefault) {
+                DropdownMenuItem(
+                    text = { Text("Delete ${selected.name}…") },
+                    onClick = {
+                        expanded = false
+                        onDialog(ProfileDialog.Delete(selected))
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileDialogHost(
+    dialog: ProfileDialog,
+    onDismiss: () -> Unit,
+    onAdd: (String) -> Unit,
+    onRename: (WowProfile, String) -> Unit,
+    onDelete: (WowProfile) -> Unit,
+) {
+    when (dialog) {
+        is ProfileDialog.Delete -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Delete ${dialog.profile.name}?") },
+            text = {
+                Text(
+                    "This removes the profile's Wine container, device identity, saved login and browser sign-in from " +
+                        "this device. Game files, add-ons and your characters aren't touched.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDismiss()
+                    onDelete(dialog.profile)
+                }) { Text("Delete", color = WowError) }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+        else -> {
+            val renaming = (dialog as? ProfileDialog.Rename)?.profile
+            var name by remember(dialog) { mutableStateOf(renaming?.name.orEmpty()) }
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(if (renaming == null) "Add profile" else "Rename profile") },
+                text = {
+                    Column {
+                        if (renaming == null) {
+                            Text(
+                                "A profile is a separate machine for another Battle.net account, with its own Wine " +
+                                    "container, device identity and login. Game files and add-ons are shared. " +
+                                    "Battle.net treats a new profile's first sign-in as a new device.",
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it.take(WowProfiles.MAX_NAME_LENGTH) },
+                            label = { Text("Profile name") },
+                            singleLine = true,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = name.isNotBlank(),
+                        onClick = {
+                            onDismiss()
+                            if (renaming == null) onAdd(name) else onRename(renaming, name)
+                        },
+                    ) { Text(if (renaming == null) "Add" else "Save") }
+                },
+                dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+            )
+        }
+    }
+}
+
 @Composable
 private fun CheckItem(label: String, ready: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1241,7 +1445,14 @@ internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int
     return "${(width / 2).roundToInt() * 2}x${(height / 2).roundToInt() * 2}"
 }
 
-private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, onStatus: (String) -> Unit): String {
+private fun prepareLaunch(
+    context: Context,
+    gameRoot: File,
+    gpu: GpuProfile,
+    screenSize: String,
+    profile: WowProfile,
+    onStatus: (String) -> Unit,
+): String {
     installBundledComponents(context, onStatus)
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
@@ -1264,34 +1475,41 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 
     onStatus("Configuring ${gpu.label} container...")
     val containerManager = ContainerManager(context)
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context))
-    val container = containerManager.getContainerById(CONTAINER_ID)
+    val containerId = profile.containerId
+    val config = containerConfig(containerId, gameRoot, gpu, screenSize, WowMachineIdentity.load(context, profile))
+    val container = containerManager.getContainerById(containerId)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
-        containerManager.createContainer(CONTAINER_ID, config)
+        containerManager.createContainer(containerId, config)
     } else {
         container.loadData(config)
         container.saveData()
     }
-    check(containerManager.hasContainer(CONTAINER_ID)) { "Container creation failed. Check system storage and logs." }
+    check(containerManager.hasContainer(containerId)) { "Container creation failed. Check system storage and logs." }
     // Written last, so the password isn't on disk during the client download or container setup.
-    if (BattleNetBrowserLogin.enabled(context)) {
+    if (BattleNetBrowserLogin.enabled(context, profile)) {
         // Even an empty login.txt can select the password path instead of the launcher session.
         BattleNetSignIn.removeLoginFile(gameRoot)
     } else {
-        BattleNetSignIn.load(context)?.let { login ->
+        BattleNetSignIn.load(context, profile)?.let { login ->
             BattleNetSignIn.writeLoginFile(gameRoot, login)
             BattleNetSignIn.startLoginWatcher(gameRoot)
         }
     }
-    return CONTAINER_ID
+    return containerId
 }
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
+private fun containerConfig(
+    containerId: String,
+    gameRoot: File,
+    gpu: GpuProfile,
+    screenSize: String,
+    identity: WowMachineIdentity,
+): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
     return JSONObject().apply {
-        put("id", CONTAINER_ID)
+        put("id", containerId)
         put("name", "WoW Forever")
         put("screenSize", screenSize)
         put("envVars", envVars)

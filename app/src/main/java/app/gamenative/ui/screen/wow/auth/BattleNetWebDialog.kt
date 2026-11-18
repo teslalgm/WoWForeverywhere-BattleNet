@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.gamenative.ui.screen.wow.WowProfile
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -42,6 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Composable
 internal fun BattleNetWebDialog(
     url: String,
+    profile: WowProfile,
     onTicket: (ByteArray) -> Unit,
     onCancel: () -> Unit,
     onError: (String) -> Unit,
@@ -61,6 +63,8 @@ internal fun BattleNetWebDialog(
     var origin by remember(url) { mutableStateOf(BrowserAuthUrl.displayOrigin(url) ?: "Battle.net") }
     val webView = remember(url) {
         WebView(context).apply {
+            // Before anything else: a WebView's cookie store can only be chosen while the WebView is unused.
+            val whenSessionReady = BrowserSession.prepare(context, this, profile)
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
@@ -130,7 +134,8 @@ internal fun BattleNetWebDialog(
                     if (request.isForMainFrame && !completed.get()) fail(view, "Battle.net could not complete this sign-in page. Try again later.")
                 }
             }
-            loadUrl(url)
+            // Emptying a shared cookie store finishes later, possibly after the dialog was cancelled.
+            whenSessionReady { if (!completed.get()) loadUrl(url) }
         }
     }
     DisposableEffect(webView) {

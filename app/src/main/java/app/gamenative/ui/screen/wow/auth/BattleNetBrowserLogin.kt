@@ -12,6 +12,8 @@ import app.gamenative.events.AndroidEvent
 import app.gamenative.ui.screen.wow.BattleNetSignIn
 import app.gamenative.ui.screen.wow.GameRegion
 import app.gamenative.ui.screen.wow.WowClientDownloader
+import app.gamenative.ui.screen.wow.WowProfile
+import app.gamenative.ui.screen.wow.WowProfiles
 import com.winlator.container.Container
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -44,23 +46,37 @@ internal object BattleNetBrowserLogin {
         data object Idle : Ui
         class Waiting(val text: String) : Ui
         // Deliberately no generated toString: a challenge URL is sensitive.
-        class Browser(val url: String) : Ui
+        class Browser(val url: String, val profile: WowProfile = WowProfile.DEFAULT) : Ui
         class Failed(val text: String) : Ui
     }
 
     /** The callback belongs to this launch even if sign-in is cancelled or another attempt starts. */
     class Launch(val command: String, val onExit: (Int) -> Unit)
 
-    fun enabled(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .getBoolean("enabled", false)
+    /** Each profile picks its own login method. The default profile keeps the preferences file it always had. */
+    fun enabled(context: Context, profile: WowProfile = WowProfiles.active(context)): Boolean =
+        prefs(context, profile).getBoolean("enabled", false)
 
-    fun setEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("enabled", enabled).apply()
+    fun setEnabled(context: Context, enabled: Boolean, profile: WowProfile = WowProfiles.active(context)) {
+        prefs(context, profile).edit().putBoolean("enabled", enabled).apply()
     }
+
+    /** Removes a deleted profile's setting together with its preferences file. */
+    fun delete(context: Context, profile: WowProfile) {
+        require(!profile.isDefault) { "The default profile keeps its preferences file" }
+        context.deleteSharedPreferences(PREFS + profile.storageSuffix)
+    }
+
+    private fun prefs(context: Context, profile: WowProfile) =
+        context.getSharedPreferences(PREFS + profile.storageSuffix, Context.MODE_PRIVATE)
 
     /** Runs after Wine prefix initialization. Container executable remains the game for window tracking. */
     @Synchronized
-    fun start(context: Context, container: Container): Launch {
+    fun start(
+        context: Context,
+        container: Container,
+        profile: WowProfile = WowProfiles.forContainer(context, container.id),
+    ): Launch {
         cancel()
         val gameRoot = Container.drivesIterator(container.drives).asSequence()
             .firstOrNull { it[0].equals("G", ignoreCase = true) }?.let { File(it[1]) }
@@ -89,8 +105,9 @@ internal object BattleNetBrowserLogin {
                 "Cannot protect the browser login request"
             }
             val log = File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/Logs/BrowserLogin.log")
-            val attempt = Attempt(bridge, request, "${region.name}.actual.battle.net", build, log)
-            diag(attempt, "browser login started (app ${app.gamenative.BuildConfig.VERSION_NAME}, ${region.name}, build $build)")
+            val attempt = Attempt(bridge, request, "${region.name}.actual.battle.net", build, log, profile)
+            // The profile id only: a profile's name is the player's own text and may be an account name.
+            diag(attempt, "browser login started (app ${app.gamenative.BuildConfig.VERSION_NAME}, ${region.name}, build $build, profile ${profile.id})")
             active = attempt
             mutableUi.value = Ui.Waiting("Starting Battle.net browser login…")
             // One deadline covers Wine startup, queues and browser interaction, below the helper's 15 minutes.
@@ -126,7 +143,7 @@ internal object BattleNetBrowserLogin {
                     client.webChallenge(device, attempt.build)
                 }
                 diag(attempt, "showing the Battle.net sign-in page")
-                publish(attempt, Ui.Browser(url))
+                publish(attempt, Ui.Browser(url, attempt.profile))
                 val ticket = withTimeout(15 * 60_000L) { attempt.ticket.await() }
                 diag(attempt, "sign-in page finished")
                 try {
@@ -277,6 +294,7 @@ internal object BattleNetBrowserLogin {
         val host: String,
         val build: Int,
         val log: File,
+        val profile: WowProfile,
     ) {
         // The request filename's random ID is independent of the private socket capability.
         val id = request.name.removePrefix("request-").removeSuffix(".txt")
@@ -306,6 +324,7 @@ internal fun BattleNetBrowserLoginHost() {
         BattleNetBrowserLogin.Ui.Idle -> Unit
         is BattleNetBrowserLogin.Ui.Browser -> BattleNetWebDialog(
             url = current.url,
+            profile = current.profile,
             onTicket = { BattleNetBrowserLogin.submit(current, it) },
             onCancel = { BattleNetBrowserLogin.abort(current) },
             onError = { BattleNetBrowserLogin.webError(current, it) },

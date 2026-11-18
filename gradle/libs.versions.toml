@@ -30,6 +30,7 @@ robolectric = "4.14" # https://mvnrepository.com/artifact/org.robolectric/robole
 runner = "1.6.2" # https://mvnrepository.com/artifact/androidx.test/runner
 settings = "2.10.0" # https://github.com/alorma/Compose-Settings/releases
 timber = "5.0.1" # https://mvnrepository.com/artifact/com.jakewharton.timber/timber
+webkit = "1.12.1" # https://mvnrepository.com/artifact/androidx.webkit/webkit
 zstd-jni = "1.5.7-5" # https://mvnrepository.com/artifact/com.github.luben/zstd-jni
 
 [libraries]
@@ -71,6 +72,7 @@ androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "j
 androidx-runner = { group = "androidx.test", name = "runner", version.ref = "runner" }
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
 mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version.ref = "mockitoKotlin" }

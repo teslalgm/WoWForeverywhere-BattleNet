@@ -37,26 +37,33 @@ import java.util.concurrent.atomic.AtomicLong
 object BattleNetSignIn {
     data class Login(val email: String, val password: String)
 
-    fun load(context: Context): Login? {
-        val prefs = prefs(context)
+    /** Each profile saves its own login. The default profile keeps the preferences file it always had. */
+    fun load(context: Context, profile: WowProfile = WowProfiles.active(context)): Login? {
+        val prefs = prefs(context, profile)
         val email = prefs.getString(KEY_EMAIL, null) ?: return null
         val sealed = prefs.getString(KEY_PASSWORD, null) ?: return null
         return try {
             Login(email, String(Crypto.decrypt(Base64.decode(sealed, Base64.NO_WRAP))))
         } catch (e: Exception) {
             Timber.w(e, "Saved Battle.net login unreadable, clearing it")
-            forget(context)
+            forget(context, profile)
             null
         }
     }
 
-    fun save(context: Context, login: Login) {
+    fun save(context: Context, login: Login, profile: WowProfile = WowProfiles.active(context)) {
         val sealed = Base64.encodeToString(Crypto.encrypt(login.password.toByteArray()), Base64.NO_WRAP)
-        prefs(context).edit().putString(KEY_EMAIL, login.email).putString(KEY_PASSWORD, sealed).apply()
+        prefs(context, profile).edit().putString(KEY_EMAIL, login.email).putString(KEY_PASSWORD, sealed).apply()
     }
 
-    fun forget(context: Context) {
-        prefs(context).edit().clear().apply()
+    fun forget(context: Context, profile: WowProfile = WowProfiles.active(context)) {
+        prefs(context, profile).edit().clear().apply()
+    }
+
+    /** Removes a deleted profile's saved login together with its preferences file. */
+    fun delete(context: Context, profile: WowProfile) {
+        require(!profile.isDefault) { "The default profile keeps its preferences file" }
+        context.deleteSharedPreferences(PREFS + profile.storageSuffix)
     }
 
     fun writeLoginFile(gameRoot: File, login: Login) {
@@ -119,7 +126,8 @@ object BattleNetSignIn {
         }
     }
 
-    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context, profile: WowProfile) =
+        context.getSharedPreferences(PREFS + profile.storageSuffix, Context.MODE_PRIVATE)
 
     private const val PREFS = "battle_net_login"
     private const val KEY_EMAIL = "email"

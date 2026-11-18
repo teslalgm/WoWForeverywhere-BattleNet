@@ -109,6 +109,7 @@ import app.gamenative.ui.data.PerformanceHudSize
 import app.gamenative.ui.data.XServerState
 import app.gamenative.GameSessionService
 import app.gamenative.ui.screen.wow.WowMachineIdentity
+import app.gamenative.ui.screen.wow.WowProfiles
 import app.gamenative.ui.widget.PerformanceHudView
 import app.gamenative.utils.AssetUtils
 import app.gamenative.utils.ContainerUtils
@@ -2210,7 +2211,8 @@ fun XServerScreen(
                                 )
                             }
                             // After the prefix setup above, which can re-extract a stock system.reg.
-                            WowMachineIdentity.load(context).applyTo(File(container.rootDir, ".wine"))
+                            WowMachineIdentity.load(context, WowProfiles.forContainer(context, container.id))
+                                .applyTo(File(container.rootDir, ".wine"))
 
                             runBlocking {
                                 extractGraphicsDriverFiles(
@@ -3660,8 +3662,10 @@ private fun setupXEnvironment(
         guestProgramLauncherComponent.setWineInfo(xServerState.value.wineInfo)
         val directCommand = getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
             (if (container.execArgs.isNotEmpty()) " " + container.execArgs else "")
-        val browserLogin = if (BattleNetBrowserLogin.enabled(context)) {
-            BattleNetBrowserLogin.start(context, container)
+        // By container rather than by the launcher's selection, so a session always signs in as its own profile.
+        val wowProfile = WowProfiles.forContainer(context, container.id)
+        val browserLogin = if (BattleNetBrowserLogin.enabled(context, wowProfile)) {
+            BattleNetBrowserLogin.start(context, container, wowProfile)
         } else {
             null
         }
